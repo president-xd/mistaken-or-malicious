@@ -14,4 +14,10 @@ model: "llama3.2:1b"     # any model pulled into your local Ollama
 num_agents: 3            # how many identical peer agents join the network
 rounds: 3                # total turns per agent: round 1 = independent guess,
                          # rounds 2..N = discussion (stops early once stable)
-topology: "line"         # how peers are wired: mesh | star | ring | line
+topology: "line"         # mesh | bus | star | ring | line | tree | hybrid | p2p
+
+# What each peer sends to its neighbours during discussion:
+#   answer -> its conclusion only      (peers debate bare assertions)
+#   both   -> its conclusion + reasoning (peers debate actual arguments)
+# The CLI flag --share overrides this.
+share: "answer"

@@ -24,9 +24,26 @@ PERSONA = (
     "are genuinely willing to change your answer when a peer is more convincing."
 )
 
-_ANSWER_RE = re.compile(r"ANSWER:\s*(.+)", re.IGNORECASE)
-_CONVINCED_RE = re.compile(r"CONVINCED_BY:\s*(.+)", re.IGNORECASE)
+# The ANSWER line must START its own line (allowing bullets/markdown like
+# "* " or "**"), so prose such as "My current answer: No" can no longer be
+# mistaken for the verdict. We also take the LAST match, because a model that
+# restates itself puts its real conclusion at the end.
+_ANSWER_RE = re.compile(r"^\W{0,4}ANSWER\W{0,4}:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
+_CONVINCED_RE = re.compile(r"^\W{0,4}CONVINCED_BY\W{0,4}:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
 _NO_ONE = {"none", "no one", "nobody", "n/a", "na", "myself", "self", ""}
+_TRIM = " *_\"'`"
+# Lines where an agent is quoting/discussing a peer rather than reasoning itself.
+_QUOTES_PEER_RE = re.compile(
+    r"(agent_\w+|peer_\w+|their reasoning|says\s*:)", re.IGNORECASE)
+
+
+def _norm(answer: str) -> str:
+    """Comparison key for an answer: case- and punctuation-insensitive.
+
+    Used for BOTH "did it change?" and the consensus check, so the two can never
+    disagree -- "Yes", "yes" and "yes." are one and the same answer.
+    """
+    return re.sub(r"[^\w\s]", "", answer).strip().lower()
 
 
 def _credited_peer(text: str, heard: dict[str, str]) -> str:
@@ -36,11 +53,14 @@ def _credited_peer(text: str, heard: dict[str, str]) -> str:
     non-neighbour credit is dropped -- this is also how we verify the change is
     grounded in a real peer rather than made up.
     """
-    m = _CONVINCED_RE.search(text)
-    raw = (m.group(1).strip().strip(".") if m else "").lower()
+    hits = _CONVINCED_RE.findall(text)
+    raw = (hits[-1].strip(_TRIM).strip(".") if hits else "").lower()
     if raw in _NO_ONE:
         return ""
-    return next((name for name in heard if name.lower() in raw), "")
+    named = [name for name in heard if name.lower() in raw]
+    # A model sometimes credits several peers ("both Agent_A and Agent_C");
+    # report them all rather than silently keeping only the first.
+    return " + ".join(named)
 
 
 def agent_names(count: int) -> list[str]:
@@ -77,6 +97,7 @@ class PeerAgent:
         self.name = name
         self.answer = ""       # current one-line answer (the ANSWER: value)
         self.reasoning = ""    # full text of the latest reply
+        self.parsed = True     # did the latest reply contain a usable ANSWER line?
         self._agent = AssistantAgent(
             name=name,
             model_client=client,
@@ -106,13 +127,33 @@ class PeerAgent:
         self._absorb(text)
         return text
 
-    async def reconsider(self, question: str, heard: dict[str, str]) -> tuple[str, bool, str]:
-        """Phase 2: hear neighbours' current answers; keep or change your own.
+    def argument(self) -> str:
+        """This peer's OWN reasoning, ready to share with neighbours.
 
+        Bookkeeping lines and anything quoting another peer are dropped: a reply
+        often restates what peers said, and re-sharing that would nest quotes
+        inside quotes until the prompt turns to noise.
+        """
+        lines = [
+            ln.strip() for ln in self.reasoning.splitlines()
+            if ln.strip()
+            and not _ANSWER_RE.match(ln)
+            and not _CONVINCED_RE.match(ln)
+            and not _QUOTES_PEER_RE.search(ln)
+        ]
+        return " ".join(lines)[:300]
+
+    async def reconsider(self, question: str, heard: dict[str, tuple[str, str]]) -> tuple[str, bool, str]:
+        """Phase 2: hear neighbours; keep or change your own answer.
+
+        `heard` maps a neighbour name -> (its answer, its reasoning-or-"").
         Returns (full_reply_text, changed?, convinced_by). `convinced_by` is the
         neighbour the model itself credits for changing its mind, or "" if none.
         """
-        peers = "\n".join(f"- {n} says: {a}" for n, a in heard.items()) or "(nobody)"
+        peers = "\n".join(
+            f"- {n} answered: {a}" + (f"\n    (their working: {why})" if why else "")
+            for n, (a, why) in heard.items()
+        ) or "(nobody)"
         previous = self.answer
         text = await self._run(
             f"The question is:\n{question}\n\n"
@@ -125,15 +166,21 @@ class PeerAgent:
             "Then end with the ANSWER line."
         )
         self._absorb(text)
-        changed = self.answer != previous
+        # Compare normalized: "Yes" -> "yes." is NOT a change of mind.
+        changed = _norm(self.answer) != _norm(previous)
         convinced_by = _credited_peer(text, heard) if changed else ""
         return text, changed, convinced_by
 
     def _absorb(self, text: str) -> None:
-        """Store the reply and extract the ANSWER: value from it."""
+        """Store the reply and extract the ANSWER: value from it.
+
+        Sets `self.parsed` so the caller can WARN instead of silently keeping a
+        stale answer -- a missing ANSWER line used to hide real mind-changes.
+        """
         self.reasoning = text
-        m = _ANSWER_RE.search(text)
-        if m:
-            self.answer = m.group(1).strip()
-        elif not self.answer:  # model ignored the format on the very first turn
-            self.answer = text.splitlines()[-1].strip() if text else ""
+        hits = _ANSWER_RE.findall(text)
+        self.parsed = bool(hits)
+        if hits:
+            self.answer = hits[-1].strip(_TRIM)
+        elif not self.answer:  # no ANSWER line at all on the very first turn
+            self.answer = text.splitlines()[-1].strip(_TRIM) if text else ""

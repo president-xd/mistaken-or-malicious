@@ -1,11 +1,12 @@
-"""CLI entry point:  python -m p2p <config.yaml>"""
+"""CLI entry point:  python -m p2p <config.yaml> [--share answer|both]"""
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import sys
 
-from .config import load_config
+from .config import SHARE_MODES, load_config
 from .network import run_network
 
 # Models emit unicode (e.g. the × sign); keep Windows terminals from mangling it.
@@ -17,10 +18,23 @@ for _stream in (sys.stdout, sys.stderr):
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: python -m p2p <config.yaml>")
+    parser = argparse.ArgumentParser(
+        prog="python -m p2p",
+        description="Run a peer-to-peer network of agents over a YAML config.",
+    )
+    parser.add_argument("config", help="path to the YAML config file")
+    parser.add_argument(
+        "--share",
+        choices=SHARE_MODES,
+        default=None,
+        help="what each peer sends to its neighbours: "
+             "'answer' = its conclusion only (default); "
+             "'both' = its conclusion AND its reasoning. "
+             "Overrides the 'share' key in the config file.",
+    )
+    args = parser.parse_args()
 
-    cfg = load_config(sys.argv[1])
+    cfg = load_config(args.config, share=args.share)
     try:
         asyncio.run(run_network(cfg))
     except Exception as exc:  # noqa: BLE001 - surface a friendly hint for the common case

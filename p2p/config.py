@@ -21,9 +21,13 @@ class Config:
     num_agents: int = 3
     rounds: int = 2
     topology: str = "mesh"
+    share: str = "answer"   # "answer" = conclusions only | "both" = + reasoning
 
 
-def load_config(path: str) -> Config:
+SHARE_MODES = ("answer", "both")
+
+
+def load_config(path: str, share: str | None = None) -> Config:
     with open(path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
@@ -41,12 +45,17 @@ def load_config(path: str) -> Config:
         num_agents=int(raw.get("num_agents", 3)),
         rounds=int(raw.get("rounds", 2)),
         topology=str(raw.get("topology", "mesh")).lower(),
+        # CLI --share wins over the config file when both are given.
+        share=str(share or raw.get("share", "answer")).lower(),
     )
 
     if cfg.num_agents < 2:
         raise SystemExit("config error: 'num_agents' must be at least 2.")
     if cfg.rounds < 1:
         raise SystemExit("config error: 'rounds' must be at least 1.")
+    if cfg.share not in SHARE_MODES:
+        raise SystemExit(
+            f"config error: 'share' must be one of: {', '.join(SHARE_MODES)}")
     if cfg.topology not in topology.available():
         raise SystemExit(
             f"config error: unknown topology '{cfg.topology}'. "

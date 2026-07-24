@@ -95,7 +95,7 @@ model: "llama3.2:1b"       # any model you've pulled into Ollama
 num_agents: 3              # how many identical peer agents
 rounds: 3                  # total turns per agent: round 1 = independent guess,
                            # rounds 2..N = discussion (stops early once stable)
-topology: "mesh"           # mesh | star | ring | line
+topology: "mesh"           # mesh | bus | star | ring | line | tree | hybrid | p2p
 ```
 
 A single `question: "..."` string still works too. Between questions the agents'
@@ -103,12 +103,18 @@ memory is reset (via the SDK) so each question starts fresh.
 
 ### Topologies (who can hear whom)
 
-| Topology | Meaning                                                        |
-|----------|----------------------------------------------------------------|
-| `mesh`   | Fully connected — everyone hears everyone.                     |
-| `star`   | `Agent_A` is the hub; spokes hear only the hub.               |
-| `ring`   | Each peer hears its two cyclic neighbours.                     |
-| `line`   | Open chain — each peer hears only its adjacent neighbours.     |
+| Topology          | Meaning                                                              |
+|-------------------|---------------------------------------------------------------------|
+| `mesh`            | Fully connected — everyone hears everyone.                          |
+| `bus`             | Shared backbone — every peer hears every other (same graph as mesh).|
+| `star`            | `Agent_A` is the hub; spokes hear only the hub.                    |
+| `ring`            | Each peer hears its two cyclic neighbours.                          |
+| `line`            | Open chain — each peer hears only its adjacent neighbours.          |
+| `tree`            | Binary hierarchy — each peer hears its parent and direct children.  |
+| `hybrid`          | Star + ring — a hub wired to all, plus a ring among the spokes.     |
+| `p2p`             | Point-to-point — peers paired off; each hears only its partner.     |
+
+(`point-to-point` is an alias for `p2p`.)
 
 ---
 
@@ -123,6 +129,21 @@ or use a different config file:
 ```bash
 python -m p2p my_question.yaml
 ```
+
+### What peers send each other: `--share`
+
+| Mode | What a peer transmits | Effect |
+|---|---|---|
+| `answer` *(default)* | its conclusion only, e.g. `408` | peers debate **bare assertions** |
+| `both` | its conclusion **and** its working | peers debate **actual arguments** |
+
+```bash
+python -m p2p config.yaml --share both
+```
+
+The flag overrides the `share:` key in the config file. In `both` mode a peer's
+shared working has its bookkeeping lines and any quotes of other peers stripped
+out, so arguments don't nest inside each other round after round.
 
 On Windows you can also just run `run.bat` (defaults to `config.yaml`).
 

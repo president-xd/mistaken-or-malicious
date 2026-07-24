@@ -11,6 +11,8 @@ import textwrap
 
 from colorama import Fore, Style, init as _init
 
+from .agent import _norm
+
 _init()
 
 _PALETTE = [Fore.CYAN, Fore.GREEN, Fore.YELLOW, Fore.MAGENTA, Fore.BLUE, Fore.RED]
@@ -43,6 +45,8 @@ def session(cfg) -> None:
     _line(f"questions: {Style.BRIGHT}{len(cfg.questions)}{Style.RESET_ALL} to answer, one by one")
     _line(f"sdk      : autogen-agentchat  |  model: {cfg.model}")
     _line(f"agents   : {cfg.num_agents}   |  rounds: {cfg.rounds}   |  topology: {cfg.topology}")
+    what = "answers only" if cfg.share == "answer" else "answers + reasoning"
+    _line(f"sharing  : {cfg.share}  ({what} sent to neighbours)")
 
 
 def question(i: int, total: int, text: str) -> None:
@@ -100,14 +104,19 @@ def info(msg: str) -> None:
     _line(msg)
 
 
+def warn(name: str, msg: str) -> None:
+    """A parse problem worth seeing -- never fail silently."""
+    _line(f"{Fore.YELLOW}{Style.BRIGHT}WARN {name}: {msg}{Style.RESET_ALL}")
+
+
 # -- final report -------------------------------------------------------------
 
 def final(agents: dict) -> None:
     banner("FINAL ANSWERS")
-    answers = [a.answer for a in agents.values()]
     for name, a in agents.items():
         _line(f"{_color(name)}{name}{Style.RESET_ALL}: {a.answer}")
-    unique = set(x.strip().lower() for x in answers)
+    # Same normalization the change-detector uses, so the two always agree.
+    unique = {_norm(a.answer) for a in agents.values()}
     if len(unique) == 1:
         _line(f"{Fore.GREEN}{Style.BRIGHT}CONSENSUS reached.{Style.RESET_ALL}")
     else:

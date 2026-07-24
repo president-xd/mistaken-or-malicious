@@ -18,9 +18,27 @@ from typing import Callable
 Builder = Callable[[list[str]], dict[str, list[str]]]
 
 
+def _from_edges(names: list[str], edges: list[tuple[str, str]]) -> dict[str, list[str]]:
+    """Build a symmetric (undirected) adjacency map from an edge list."""
+    adj: dict[str, list[str]] = {n: [] for n in names}
+    for a, b in edges:
+        if a != b:
+            adj[a].append(b)
+            adj[b].append(a)
+    return adj
+
+
 def _mesh(names: list[str]) -> dict[str, list[str]]:
     """Fully connected: everyone hears everyone else."""
     return {n: [m for m in names if m != n] for n in names}
+
+
+def _bus(names: list[str]) -> dict[str, list[str]]:
+    """Shared backbone: every peer taps one common medium, so every peer can
+    reach every other. Logically this is the same neighbour set as mesh -- the
+    shared-medium, one-talker-at-a-time nature of a real bus isn't simulated
+    here, only who-can-hear-whom, which for a bus is everyone."""
+    return _mesh(names)
 
 
 def _ring(names: list[str]) -> dict[str, list[str]]:
@@ -54,11 +72,45 @@ def _star(names: list[str]) -> dict[str, list[str]]:
     return adj
 
 
+def _tree(names: list[str]) -> dict[str, list[str]]:
+    """Hierarchy: names[0] is the root of a binary tree. Each peer hears its
+    parent and its direct children -- ideas flow up and down the branches."""
+    edges = [(names[(i - 1) // 2], names[i]) for i in range(1, len(names))]
+    return _from_edges(names, edges)
+
+
+def _hybrid(names: list[str]) -> dict[str, list[str]]:
+    """A star combined with a ring: names[0] is a hub wired to every other peer
+    (the star part), while the non-hub peers also form a ring among themselves
+    (the ring part). A concrete mix of two topologies."""
+    hub, spokes = names[0], names[1:]
+    edges = [(hub, s) for s in spokes]
+    m = len(spokes)
+    if m >= 2:
+        edges += [(spokes[i], spokes[(i + 1) % m]) for i in range(m)]
+    return _from_edges(names, edges)
+
+
+def _p2p(names: list[str]) -> dict[str, list[str]]:
+    """Point-to-point: dedicated links between pairs. Peers are paired up so
+    each hears exactly one partner. With an odd count the leftover peer joins
+    the final pair, so that last group forms a short 3-chain."""
+    edges = [(names[i], names[i + 1]) for i in range(0, len(names) - 1, 2)]
+    if len(names) % 2 == 1 and len(names) >= 3:
+        edges.append((names[-2], names[-1]))
+    return _from_edges(names, edges)
+
+
 _REGISTRY: dict[str, Builder] = {
     "mesh": _mesh,
+    "bus": _bus,
+    "star": _star,
     "ring": _ring,
     "line": _line,
-    "star": _star,
+    "tree": _tree,
+    "hybrid": _hybrid,
+    "p2p": _p2p,
+    "point-to-point": _p2p,  # alias
 }
 
 

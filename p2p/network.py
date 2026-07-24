@@ -51,6 +51,8 @@ async def _answer_one(cfg, agents, adjacency, names, question) -> None:
         log.thinking(name)
         text = await agents[name].solve(question)
         log.reply(name, text)
+        if not agents[name].parsed:
+            log.warn(name, "no ANSWER line - fell back to the last line of the reply")
         log.held(name, agents[name].answer)
 
     # Rounds 2..N -- discussion: peers hear neighbours and may change their mind.
@@ -58,10 +60,19 @@ async def _answer_one(cfg, agents, adjacency, names, question) -> None:
         log.phase(f"ROUND {r}/{cfg.rounds} - discussion")
         changes = 0
         for name in names:
-            neighbours = {m: agents[m].answer for m in adjacency[name]}
+            # In "answer" mode a peer sends only its conclusion; in "both" mode
+            # it also sends the reasoning behind it, so peers debate arguments
+            # instead of bare assertions.
+            neighbours = {
+                m: (agents[m].answer,
+                    agents[m].argument() if cfg.share == "both" else "")
+                for m in adjacency[name]
+            }
             log.hearing(name, list(neighbours))
             text, did_change, convinced_by = await agents[name].reconsider(question, neighbours)
             log.reply(name, text)
+            if not agents[name].parsed:
+                log.warn(name, "no ANSWER line - previous answer kept, change may be lost")
             if did_change:
                 changes += 1
                 log.changed(name, convinced_by)
