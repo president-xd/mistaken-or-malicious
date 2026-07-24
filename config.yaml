@@ -1,0 +1,17 @@
+# P2P multi-agent network config.
+#   python -m p2p config.yaml
+#
+# You choose only these. Agent names are generated automatically at runtime
+# (Agent_A, Agent_B, ...). All agents are the same kind of peer.
+
+# One or more questions -- the agents answer them one by one.
+questions:
+  - "What is 17 * 24? Show your working."
+  - "Is a hot dog a sandwich? Answer yes or no and justify briefly."
+# (A single 'question: "..."' string also still works.)
+
+model: "llama3.2:1b"     # any model pulled into your local Ollama
+num_agents: 3            # how many identical peer agents join the network
+rounds: 3                # total turns per agent: round 1 = independent guess,
+                         # rounds 2..N = discussion (stops early once stable)
+topology: "line"         # how peers are wired: mesh | star | ring | line
