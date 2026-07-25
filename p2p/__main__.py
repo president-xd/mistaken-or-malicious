@@ -8,6 +8,7 @@ import sys
 
 from . import roles
 from .config import SHARE_MODES, load_config
+from .providers import PROVIDERS
 from .network import Network, run_network
 from .results import Results, already_done
 
@@ -29,12 +30,23 @@ def main() -> None:
         help="what each agent sends its neighbours: 'answer' = its conclusion "
              "only; 'both' = conclusion and reasoning. Overrides the config file.")
     parser.add_argument(
+        "--provider", choices=PROVIDERS, default=None,
+        help="where the model runs: 'ollama' on this machine, or 'deepseek' "
+             "over the API (needs DEEPSEEK_API_KEY in your environment). "
+             "Overrides the config file. Switching provider without --model "
+             "also switches to that provider's default model.")
+    parser.add_argument(
+        "--model", default=None,
+        help="the model to use, e.g. deepseek-v4-pro or llama3.1:8b-instruct-q8_0. "
+             "Overrides the config file.")
+    parser.add_argument(
         "--result", choices=["json"], default=None,
         help="save the whole run, including the performance numbers, to a JSON "
              "file in the results folder.")
     args = parser.parse_args()
 
-    cfg = load_config(args.config, share=args.share)
+    cfg = load_config(args.config, share=args.share,
+                      provider=args.provider, model=args.model)
 
     # If this run has already finished, do not do it again. Needs `run_name`.
     if cfg.skip_done:
@@ -57,7 +69,18 @@ def main() -> None:
         asyncio.run(run_network(cfg, recorder))
     except Exception as exc:  # noqa: BLE001 - give a clear hint for the usual cause
         text = str(exc).lower()
-        if any(k in text for k in ("connect", "refused", "11434", "connection")):
+        if cfg.provider == "deepseek" and any(
+                k in text for k in ("401", "403", "unauthorized", "api key")):
+            raise SystemExit(
+                "\nDeepSeek refused the key.\n"
+                "Check DEEPSEEK_API_KEY is set and still active.\n"
+                f"\noriginal error: {exc}")
+        if cfg.provider == "deepseek" and "402" in text:
+            raise SystemExit(
+                "\nDeepSeek says the account is out of credit.\n"
+                f"\noriginal error: {exc}")
+        if cfg.provider == "ollama" and any(
+                k in text for k in ("connect", "refused", "11434", "connection")):
             raise SystemExit(
                 "\nCannot reach Ollama at http://localhost:11434.\n"
                 "Start it with `ollama serve`, and make sure the model is pulled "
