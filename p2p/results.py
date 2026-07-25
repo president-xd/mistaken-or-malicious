@@ -20,6 +20,7 @@ class Results:
     def __init__(self, cfg, agents, liars):
         self.data = {
             "settings": {
+                "provider": cfg.provider,
                 "model": cfg.model,
                 "agents": cfg.agents,
                 "rounds": cfg.rounds,
@@ -46,12 +47,25 @@ class Results:
             "questions": [],
             "summary": {},
         }
+        self.data["settings"]["repeats"] = cfg.repeats
         self._question = None
+        # Which repeat we are inside. Stays 1 when repeats is 1.
+        self._repeat, self._seed = 1, cfg.seed
 
     # ---------------------------------------------------------- during a run
 
+    def start_repeat(self, number, seed):
+        """A new repeat of the whole experiment has begun.
+
+        Every question recorded from now on is stamped with this number, so
+        nothing from the earlier repeats is overwritten or lost.
+        """
+        self._repeat, self._seed = number, seed
+
     def start_question(self, text, correct):
         self._question = {
+            "repeat": self._repeat,
+            "seed": self._seed,
             "text": text,
             "correct_answer": correct,
             "rounds": [],
@@ -89,6 +103,26 @@ class Results:
 
     def set_summary(self, summary):
         self.data["summary"] = _round_flat(summary)
+
+    def set_repeats(self, count, right_runs, right_combined,
+                    left_runs=None, left_combined=None):
+        """Save the result of every repeat, and the average over them.
+
+        `each_run` holds one entry per repeat, so anybody can redo the average
+        by hand. `average` holds the mean, the lowest and highest repeat, and
+        the spread, which is what should be quoted as the result.
+        """
+        block = {
+            "count": count,
+            "each_run": [_round_flat(r) for r in right_runs],
+            "average": right_combined,
+        }
+        if left_runs is not None:
+            block["compared_against"] = {
+                "each_run": [_round_flat(r) for r in left_runs],
+                "average": left_combined,
+            }
+        self.data["repeats"] = block
 
     def set_comparison(self, without_trust, with_trust):
         """Used by compare_baseline: the same test run twice, side by side."""
