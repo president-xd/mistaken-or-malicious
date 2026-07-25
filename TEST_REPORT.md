@@ -3,9 +3,9 @@
 A full test of the project, done as a testing engineer would do it. Everything
 here was actually run. No result is guessed.
 
-**Test suite: 232 tests, all passing.**
+**Test suite: 267 tests, all passing.**
 **Features tested end to end with a real model: 20 of 20 working.**
-**Bugs found: 9. All 9 fixed.**
+**Bugs found: 12. Nine fixed; three recorded as open design issues.**
 
 ---
 
@@ -56,7 +56,7 @@ I checked the code for each feature, one by one.
 | Friedkin-Johnsen maths fitting | a research extra. Needs very long runs |
 | MLflow tracking | built for large clusters. Our JSON file covers it |
 | Automatic vLLM server control | built for clusters. We run on one machine |
-| Four different model providers | Ollama is enough for this project |
+| Four different model providers | we have two: ollama and deepseek. That covers offline and capable |
 | Their trust rule | your formula replaces it and is better |
 | Their two ways of reading an answer | it is a bug in their code, not a feature |
 
@@ -66,7 +66,7 @@ I checked the code for each feature, one by one.
 
 | Point | Ours | Theirs |
 |---|---|---|
-| Tests | 232 | none at all |
+| Tests | 267 | none at all |
 | Mind changes | shown live, every round | worked out afterwards only |
 | Who convinced whom | recorded and checked | never recorded |
 | Reading an answer | one shared rule | two different rules that can disagree |
@@ -80,7 +80,7 @@ I checked the code for each feature, one by one.
 
 Five kinds of testing, in this order.
 
-**a. Every part on its own, without a model.** 232 tests. These run in under a
+**a. Every part on its own, without a model.** 267 tests. These run in under a
 second and need no model, so they can be run constantly. They check the maths,
 the settings, the graph shapes, the answer reading and the scoring.
 
@@ -102,8 +102,11 @@ honest agents, the model is switched off, every answer is empty.
 
 ## 3. Bugs found, and whose fault they are
 
-Nine real bugs. All were **our** fault, not the model's. All are fixed and each
-now has a test so it cannot come back.
+Twelve real bugs. All were **our** fault, not the model's. Nine are fixed and each
+has a test so it cannot come back. The last three (10, 11 and 12) are design
+issues rather than broken maths: fixing them would move every number the project
+has already produced, so they are written up here for a decision rather than
+quietly changed.
 
 ### Bug 1 — the agents never saw the trust score (most serious)
 
@@ -269,6 +272,126 @@ The maths lives in `p2p/repeat.py` and is checked against sums done by hand in
 **What this means for the numbers in this report.** They were all measured with
 `repeats: 1`. They should be re-measured with `repeats: 5` before anything here
 is quoted as a finding.
+
+### Bug 10 — a stronger model turns the whole experiment into a null result
+
+**What happened.** We added the DeepSeek API as a provider and ran the same
+strong-attack setup on `deepseek-v4-pro`. Every number looked perfect: honest
+accuracy 100% both with and without trust, attack success rate 0% both ways.
+
+It was not a perfect result. It was an experiment where **nothing happened**.
+Across a whole run, **no honest agent changed its mind even once**.
+
+**Why.** `data/hard_questions.yaml` was screened against `llama3.1:8b`, and the
+counts are written in its comments. Those counts do not carry over. We re-ran
+the identical screening — one honest agent, three peers pushing the wrong
+answer, three tries each — against `deepseek-v4-pro`:
+
+| Question | llama3.1:8b | deepseek-v4-pro |
+|---|---|---|
+| capital of New Zealand | turned 3/3 | turned **0/3** |
+| largest country in Africa | turned 2/3 | turned **0/3** |
+| capital of Turkey | turned 1/3 | turned **0/3** |
+| capital of Switzerland | turned 1/3 | turned **0/3** |
+
+Of eight candidate questions tried, only **one** could be argued about at all.
+
+**Whose fault.** Ours. The experiment design is tied to one model's weaknesses,
+and it fails silently rather than loudly when the model changes.
+
+**Why it matters.** Honest accuracy and attack success rate are the two measures
+that come from what agents actually decided. If no agent ever moves, both are
+fixed at their best value in both halves and can never show a difference. Only
+trust separation and attacker influence still move, and those come from the
+trust table rather than from any decision.
+
+**The fix, in two parts.**
+
+1. `dynamic-tests/persuadability.py` runs the screening against whatever model
+   you are about to use, so the question set can be rebuilt for it.
+2. The program now detects the case and says so, instead of printing a clean
+   table: `Careful: this experiment measured nothing on the first two rows.`
+
+### Bug 11 — the trust score uses answers the listener cannot hear
+
+**What happened.** In `network.update_trust`, each agent's behaviour score is
+worked out against **every other agent in the network**:
+
+```python
+others = [vectors[m] for m in self.names if m != name]
+```
+
+`self.names` is everybody, not the listener's neighbours. So in a line
+`Agent_A - Agent_B - Agent_C`, Agent_A's trust in Agent_B moves when Agent_C
+changes its answer — and **Agent_A cannot hear Agent_C at all**.
+
+**Proved** in `tests/test_locality.py`. The same line network was run twice,
+changing only Agent_C's answer. Agent_A's trust in Agent_B came out different
+both times.
+
+**Why it matters.** The project's central claim is a network with no
+orchestrator, where each agent works only from what it can hear. A score
+computed from the whole network needs a global view that no peer has.
+
+**A second consequence.** Because the score depends only on the speaker, every
+listener ends up with **exactly the same** trust in a given speaker. Measured on
+a real run:
+
+```
+Agent_A  {Agent_B: 0.2048, Agent_C: 0.7952, Agent_D: 0.7952}
+Agent_C  {Agent_A: 0.7952, Agent_B: 0.2048, Agent_D: 0.7952}
+Agent_D  {Agent_A: 0.7952, Agent_B: 0.2048, Agent_C: 0.7952}
+```
+
+So `w_ij` does not really depend on `i`. The trust matrix is a list in disguise.
+The formula is written `w_ij`, which suggests each listener forms its own view;
+in practice they cannot differ. Worth raising with the supervisor before the
+matrix is quoted as a result.
+
+**In a mesh this is invisible**, because everyone hears everyone, which is why
+it never showed up in the main results. It only bites in star, ring, line and
+tree.
+
+**Not yet fixed.** Making the scoring local changes every number the project has
+produced, so it should be a deliberate decision, not a quiet edit.
+
+### Bug 12 — one of the three signals is handicapped before it is added up
+
+**What happened.** `network.update_trust` sharpens `agree` and `anomaly` but
+**not** `consist`:
+
+```python
+agree   = trust_math.sharpen(raw_agree)   if cfg.sharpen else raw_agree
+anomaly = trust_math.sharpen(raw_anomaly) if cfg.sharpen else raw_anomaly
+# consist is never sharpened
+```
+
+**Why it matters.** Sharpening stretches whatever range was seen across the full
+0 to 1. In `scoring: "text"` mode, embeddings squash everything into a narrow
+band, so this changes a signal enormously. Measured with realistic values that
+carry the **same** starting gap:
+
+| | raw spread | spread after our code |
+|---|---|---|
+| `agree` | 0.069 | **1.000** |
+| `consist` | 0.065 | 0.065 |
+
+`consist` ends up with about **a fifteenth** of the room to move, even though
+the three weights say it should count for as much as the others. A weight of
+one third does not buy it a third of a say.
+
+**This partly revises an earlier conclusion.** The ablation in section 6 found
+that `consist` contributes nothing. Some of that may not be about consistency
+being a weak idea at all — our code hands it a much smaller range to work in
+before the weights are applied.
+
+**Smaller in `scoring: "answer"`**, the mode used for the headline results,
+because values are already 0 or 1 there and sharpening has little left to do.
+So the ablation conclusion still stands for `answer` mode; it is `text` mode
+that is distorted.
+
+**Recorded in** `tests/test_signal_balance.py`. **Not yet fixed**, for the same
+reason as Bug 11: it would move every published number.
 
 ### One thing that looked like a bug and is not
 
@@ -497,7 +620,7 @@ setting at least five times and report the average.
 python -m unittest discover -s tests
 ```
 
-232 tests, no model needed, runs in under a second.
+267 tests, no model needed, runs in under a second.
 
 ```bash
 python ablation.py
