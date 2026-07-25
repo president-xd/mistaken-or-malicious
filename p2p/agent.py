@@ -18,12 +18,10 @@ from autogen_core import CancellationToken
 from autogen_core.models import ModelInfo
 from autogen_ext.models.ollama import OllamaChatCompletionClient
 
-# Shared character for every peer -- identical agents, so any disagreement comes
-# from the model's own reasoning rather than from different instructions.
-PERSONA = (
-    "a careful problem-solver. You reason step by step, keep it brief, and you "
-    "are genuinely willing to change your answer when a peer is more convincing."
-)
+from . import prompts
+
+# Kept for older code that imported it. The real text lives in prompts.py.
+PERSONA = prompts.HONEST
 
 # The ANSWER line must START its own line (allowing bullets/markdown like
 # "* " or "**"), so prose such as "My current answer: No" can no longer be
@@ -52,11 +50,7 @@ _SHORT_ANSWER = 60      # hard cap on anything we salvage from prose
 # Sent ALONE when the model forgot its ANSWER line. Re-sending the whole question
 # just reproduces the same failure, so instead we ask only for the missing line --
 # the agent still has its own reply in context and only has to name its verdict.
-_RETRY_NUDGE = (
-    "Your last reply is missing its final ANSWER line. Do not explain anything "
-    "again. Reply with that ONE line only, in exactly this form:\n"
-    "ANSWER: <the answer itself, in as few words as possible. No explanation.>"
-)
+_RETRY_NUDGE = prompts.RETRY
 
 
 def _salvage(text: str) -> str:
@@ -223,8 +217,14 @@ class PeerAgent:
     _candidates: tuple = ()
     belief: dict = {}
 
-    def __init__(self, name: str, client: OllamaChatCompletionClient):
+    def __init__(self, name: str, client: OllamaChatCompletionClient,
+                 role: str = "honest", wrong_answer: str = "",
+                 agreeableness: str = "", persuasion: str = ""):
         self.name = name
+        self.role = role           # "honest" or "liar"
+        self.wrong_answer = wrong_answer   # the answer a liar must defend
+        self.agreeableness = agreeableness  # how easily it changes its mind
+        self.persuasion = persuasion        # how hard it pushes its view
         self.answer = ""       # current one-line answer (the ANSWER: value)
         self.belief = {}       # answer -> probability, over the answers in play
         self.reasoning = ""    # full text of the latest reply
@@ -234,13 +234,13 @@ class PeerAgent:
         self._agent = AssistantAgent(
             name=name,
             model_client=client,
-            system_message=(
-                f"You are {name}, {PERSONA} "
-                "EVERY reply you write must finish with this line, and nothing "
-                "may come after it:\n"
-                "ANSWER: <the answer itself, in as few words as possible. No explanation.>"
-            ),
+            system_message=prompts.system_message(name, role,
+                                                  agreeableness, persuasion),
         )
+
+    @property
+    def lies(self) -> bool:
+        return self.role == "liar"
 
     async def _run(self, prompt: str) -> str:
         result = await self._agent.run(task=prompt)
@@ -270,12 +270,9 @@ class PeerAgent:
 
     async def solve(self, question: str) -> str:
         """Phase 1: answer independently, having heard no peer yet."""
-        return await self._ask(
-            f"Solve this question on your own:\n{question}\n\n"
-            "Show brief reasoning. Then finish with this line, with NOTHING "
-            "after it:\n"
-            "ANSWER: <the answer itself, in as few words as possible. No explanation.>"
-        )
+        if self.lies and self.wrong_answer:
+            return await self._ask(prompts.solve_as_liar(question, self.wrong_answer))
+        return await self._ask(prompts.solve(question))
 
     def argument(self) -> str:
         """This peer's OWN reasoning, ready to share with neighbours.
@@ -293,15 +290,24 @@ class PeerAgent:
         ]
         return " ".join(lines)[:300]
 
-    async def reconsider(self, question: str, heard: dict[str, tuple[str, str]]) -> tuple[str, bool, str]:
+    async def reconsider(self, question: str, heard: dict[str, tuple[str, str]],
+                         trust: dict[str, float] | None = None) -> tuple[str, bool, str]:
         """Phase 2: hear neighbours; keep or change your own answer.
 
         `heard` maps a neighbour name -> (its answer, its reasoning-or-"").
         Returns (full_reply_text, changed?, convinced_by). `convinced_by` is the
         neighbour the model itself credits for changing its mind, or "" if none.
         """
+        # Put the trust score next to each peer's name. This is what makes the
+        # trust defence actually work: without it the score would be worked out
+        # and shown, but the agent would never see it and nothing would change.
+        def label(n):
+            if trust and n in trust:
+                return f"- {n} (trust {trust[n]:.2f}) answered:"
+            return f"- {n} answered:"
+
         peers = "\n".join(
-            f"- {n} answered: {a}" + (f"\n    (their working: {why})" if why else "")
+            f"{label(n)} {a}" + (f"\n    (their working: {why})" if why else "")
             for n, (a, why) in heard.items()
         ) or "(nobody)"
         previous = self.answer
@@ -310,20 +316,9 @@ class PeerAgent:
         self._candidates = list(dict.fromkeys(
             [previous] + [a for a, _ in heard.values()]))
         options = ", ".join(f'"{c}"' for c in self._candidates)
-        text = await self._ask(
-            f"The question is:\n{question}\n\n"
-            f"Your current answer: {previous}\n\n"
-            f"Peers you can hear right now:\n{peers}\n\n"
-            "If a peer's reasoning is more convincing, adopt the better answer and "
-            "briefly say why. Otherwise defend yours.\n\n"
-            "Finish with these three lines, in this order, and write NOTHING after "
-            "them:\n"
-            "CONVINCED_BY: <peer name, or none>\n"
-            f"BELIEF: one-line JSON splitting 1.0 across {options}, e.g. "
-            '{"first": 0.7, "second": 0.3}. Use fractions to show how much you '
-            "credit each - only use 1.0 if a peer's view has no merit at all\n"
-            "ANSWER: <the answer itself, in as few words as possible. No explanation.>"
-        )
+        write = prompts.reconsider_as_liar if self.lies else prompts.reconsider
+        note = prompts.TRUST_NOTE if trust else ""
+        text = await self._ask(write(question, previous, peers, options, note))
         self._absorb(text)
         # Compare normalized: "Yes" -> "yes." is NOT a change of mind.
         changed = _norm(self.answer) != _norm(previous)

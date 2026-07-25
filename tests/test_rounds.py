@@ -16,9 +16,8 @@ import contextlib
 import io
 import unittest
 
-from p2p import topology
-from p2p.config import Config
-from p2p.network import _answer_one
+from p2p.config import Config, Question
+from p2p.network import Network
 
 
 class RecordingAgent:
@@ -42,7 +41,7 @@ class RecordingAgent:
         self.answer = self.script[0]
         return f"ANSWER: {self.answer}"
 
-    async def reconsider(self, question, heard):
+    async def reconsider(self, question, heard, trust=None):
         # Record exactly what this agent was handed this turn.
         self.seen.append({n: a for n, (a, _) in heard.items()})
         self.turn += 1
@@ -57,14 +56,13 @@ class RecordingAgent:
 
 def run_round_loop(scripts, topo, rounds, share="answer"):
     """Run the real discussion loop over recording agents; return them by name."""
-    names = list(scripts)
-    agents = {n: RecordingAgent(n, scripts[n]) for n in names}
-    adjacency = topology.build(topo, names)
-    cfg = Config(questions=["Q"], rounds=rounds, num_agents=len(names),
+    agents = {n: RecordingAgent(n, scripts[n]) for n in scripts}
+    cfg = Config(questions=[Question("Q")], rounds=rounds, agents=len(agents),
                  topology=topo, share=share)
+    net = Network(cfg, client=None, agents=agents)
     # The loop logs verbosely; keep test output clean.
     with contextlib.redirect_stdout(io.StringIO()):
-        asyncio.run(_answer_one(cfg, agents, adjacency, names, "Q"))
+        asyncio.run(net.run_question(Question("Q")))
     return agents
 
 

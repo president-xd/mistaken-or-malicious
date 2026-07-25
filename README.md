@@ -1,188 +1,362 @@
-# P2P Agent Network
+# P2P Agent Network with Dynamic Trust
 
-A minimal **peer-to-peer multi-agent network**. There is **no orchestrator**:
-every agent answers a question on its own, then discusses its answer with other
-agents over a chosen **topology** and *changes its mind when a peer is more
-convincing*.
+A small network of AI agents that answer a question, discuss it, and change their
+minds. Some agents can be told to **lie**. The other agents defend themselves with a
+**trust score** that they update every round.
 
-> Example: ask "what is 17 × 24?". Agent_A says 408, Agent_B says 1360. They
-> talk; the one with weaker reasoning adopts the better answer.
-
-Built on **Microsoft AutoGen** (`autogen-agentchat`) with a **local Ollama**
-model (default `llama3.2:1b`).
+The point of the project: show that the network does better **with** dynamic trust than
+**without** it.
 
 ---
 
-## 1. Prerequisites
+## 1. Install
 
-- **Python 3.10+** (tested on 3.13)
-- **Ollama** — https://ollama.com/download
+You need **Python 3.10+** and **Ollama** (https://ollama.com/download).
 
----
-
-## 2. Set up Ollama (the local model API)
-
-The agents talk to a model served by Ollama over its local HTTP API at
-`http://localhost:11434`.
-
-**a. Pull the model:**
+**a. Get the models.** One chat model, and one small embedding model:
 
 ```bash
-ollama pull llama3.2:1b
+ollama pull llama3.1:8b-instruct-q8_0
 ```
-
-**b. Make sure the API is running.** On Windows/macOS the desktop app usually
-starts it automatically. To start it manually in a terminal:
 
 ```bash
-ollama serve
+ollama pull nomic-embed-text
 ```
 
-**c. Confirm the API is reachable** (should return JSON listing your models):
+A 1-billion model such as `llama3.2:1b` will run, but it is too random for real
+results. Use an 8-billion model or larger.
+
+**b. Check Ollama is running:**
 
 ```bash
 curl http://localhost:11434/api/tags
 ```
 
-On Windows PowerShell you can instead run:
+If that fails, start it with `ollama serve`.
 
-```bash
-Invoke-RestMethod http://localhost:11434/api/tags
-```
-
-If that fails, Ollama isn't running — start it with `ollama serve`.
-
-> Running Ollama on another host/port? Set `OLLAMA_HOST` before running the
-> project, e.g. `set OLLAMA_HOST=http://192.168.1.10:11434` (Windows) /
-> `export OLLAMA_HOST=...` (macOS/Linux).
-
----
-
-## 3. Install the project (from scratch)
-
-From the project folder:
+**c. Set up the project:**
 
 ```bash
 python -m venv .venv
 ```
 
-Activate it:
-
 ```bash
 .\.venv\Scripts\activate
 ```
 
-(macOS/Linux: `source .venv/bin/activate`)
-
-Install the dependencies:
-
 ```bash
-pip install autogen-agentchat "autogen-ext[ollama]" pyyaml colorama
+pip install autogen-agentchat "autogen-ext[ollama]" pyyaml colorama ollama
 ```
 
 ---
 
-## 4. Configure the run (`config.yaml`)
-
-You only choose a few things — agent names are generated automatically at
-runtime (`Agent_A`, `Agent_B`, ...):
-
-```yaml
-questions:                 # one or more; the agents answer them one by one
-  - "What is 17 * 24? Show your working."
-  - "Is a hot dog a sandwich? Answer yes or no and justify briefly."
-model: "llama3.2:1b"       # any model you've pulled into Ollama
-num_agents: 3              # how many identical peer agents
-rounds: 3                  # total turns per agent: round 1 = independent guess,
-                           # rounds 2..N = discussion (stops early once stable)
-topology: "mesh"           # mesh | bus | star | ring | line | tree | hybrid | p2p
-```
-
-A single `question: "..."` string still works too. Between questions the agents'
-memory is reset (via the SDK) so each question starts fresh.
-
-### Topologies (who can hear whom)
-
-| Topology          | Meaning                                                              |
-|-------------------|---------------------------------------------------------------------|
-| `mesh`            | Fully connected — everyone hears everyone.                          |
-| `bus`             | Shared backbone — every peer hears every other (same graph as mesh).|
-| `star`            | `Agent_A` is the hub; spokes hear only the hub.                    |
-| `ring`            | Each peer hears its two cyclic neighbours.                          |
-| `line`            | Open chain — each peer hears only its adjacent neighbours.          |
-| `tree`            | Binary hierarchy — each peer hears its parent and direct children.  |
-| `hybrid`          | Star + ring — a hub wired to all, plus a ring among the spokes.     |
-| `p2p`             | Point-to-point — peers paired off; each hears only its partner.     |
-
-(`point-to-point` is an alias for `p2p`.)
-
----
-
-## 5. Run it
+## 2. Run it
 
 ```bash
 python -m p2p config.yaml
 ```
 
-or use a different config file:
+Save the results to a file as well:
 
 ```bash
-python -m p2p my_question.yaml
+python -m p2p config.yaml --result json
 ```
 
-### What peers send each other: `--share`
-
-| Mode | What a peer transmits | Effect |
-|---|---|---|
-| `answer` *(default)* | its conclusion only, e.g. `408` | peers debate **bare assertions** |
-| `both` | its conclusion **and** its working | peers debate **actual arguments** |
+Send reasoning between agents, not just answers:
 
 ```bash
 python -m p2p config.yaml --share both
 ```
 
-The flag overrides the `share:` key in the config file. In `both` mode a peer's
-shared working has its bookkeeping lines and any quotes of other peers stripped
-out, so arguments don't nest inside each other round after round.
+---
 
-On Windows you can also just run `run.bat` (defaults to `config.yaml`).
+## 3. How it works, in order
 
-You'll see the topology, each agent's independent answer, every discussion round
-(who listens to whom, full reasoning, and any mind-changes in red), and a final
-report that flags whether the network reached **consensus**.
+1. **Round 1.** Every agent answers alone. Nobody hears anybody.
+2. **Round 2 and after.** Each agent is shown what its neighbours said, and decides to
+   keep or change its answer.
+3. **After each discussion round**, every agent is given a score for how it behaved,
+   and the trust values move.
+4. **At the end**, four numbers say whether the defence worked.
+
+All agents in a round are shown the **same frozen state**, so no agent gets an unfair
+advantage from going first.
 
 ---
 
-## 6. Testing / honesty check
+## 4. The trust formula
 
-To verify the mind-changing is genuinely peer-driven (not hard-coded), run the
-experiment harness — it runs the real program across different questions, agent
-counts, and topologies and reports how many changes were credited to a *real*
-neighbour:
+Each agent keeps a score for every neighbour. After each round:
+
+```
+new trust = trust_memory * old trust + (1 - trust_memory) * this round's score
+```
+
+The round score is made from three signals, each between 0 and 1:
+
+```
+score = weight_agree * agree + weight_consist * consist + weight_anomaly * (1 - anomaly)
+```
+
+| Signal | What it asks | High value means |
+|---|---|---|
+| `agree` | is this agent close to the average of the others? | it fits in |
+| `consist` | is it saying the same thing as last round? | it is steady |
+| `anomaly` | how far is it from every other agent? | it is an outlier (bad) |
+
+`anomaly` is flipped with `1 -` because a high anomaly is bad, while high `agree` and
+high `consist` are good.
+
+**Two things fall out of the formula:**
+
+- Trust always ends up equal to the score. An agent that keeps scoring 0.59 ends with
+  trust 0.59.
+- It takes about `ln(0.5) / ln(trust_memory)` rounds for an old trust value to lose
+  half its weight. At `trust_memory: 0.8` that is about **3 rounds**, so give the run
+  enough rounds or the liar will not separate before it ends.
+
+**Communication strength** is trust turned into shares that add up to 1:
+
+```
+share = trust in this agent / total trust in everyone I hear
+```
+
+Without trust everyone gets an equal share. With trust the liar gets less. That drop is
+the defence working.
+
+---
+
+## 5. What the four numbers mean
+
+| Number | Good direction | Meaning |
+|---|---|---|
+| honest accuracy | higher | how many honest agents ended with the right answer |
+| attack success rate | lower | honest agents that were right at the start and wrong at the end |
+| trust separation | higher | average trust in honest agents minus average trust in liars |
+| attacker influence | lower | the liars' share of all the attention |
+
+Compare **attacker influence** against the **equal share** printed next to it. Below the
+equal share means the defence is working.
+
+---
+
+## 6. Every setting
+
+All settings live in `config.yaml`. Every one is optional.
+
+### Questions
+
+| Setting | Meaning |
+|---|---|
+| `text` | the question |
+| `answer` | the correct answer. Used only for scoring. Agents never see it. |
+| `wrong` | the believable wrong answer a liar defends for this question |
+
+```yaml
+questions:
+  - text: "What is 17 * 24?"
+    answer: "408"
+    wrong: "347"
+```
+
+`wrong` is set per question on purpose. "347" is believable for a sum, but nonsense for
+"what is the capital of Japan".
+
+### Model
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `model` | `llama3.2:1b` | the chat model |
+| `embed_model` | `nomic-embed-text` | only used when `scoring: "text"` |
+
+### Network
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `agents` | `3` | how many agents (at least 2) |
+| `rounds` | `2` | round 1 is alone, the rest are discussion |
+| `topology` | `mesh` | who can hear whom (see below) |
+| `share` | `answer` | `answer` = send the answer only, `both` = send reasoning too |
+| `seed` | `1` | the same seed gives the same run again |
+
+### Liars
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `attackers` | `0` | how many agents lie |
+| `attacker_places` | `random` | `random`, or seats like `"0,3"`, or `center`, or `leaf` |
+| `attacker_answer` | `""` | fallback wrong answer for questions with no `wrong:` |
+| `sleeper` | `false` | behave honestly at first, then start lying halfway through |
+
+### Trust
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `trust` | `false` | `false` = every agent heard equally (the baseline) |
+| `scoring` | `answer` | `answer` = compare answers directly. `text` = compare meaning with the embedding model. |
+| `start_trust` | `0.5` | everyone starts neutral |
+| `trust_memory` | `0.8` | how much old trust to keep. Must be below 1. |
+| `weight_agree` | `0.333` | how much "fits in" counts |
+| `weight_consist` | `0.333` | how much "steady" counts |
+| `weight_anomaly` | `0.333` | how much "not an outlier" counts |
+| `trust_floor` | `0.0` | above 0, stop listening to anyone trusted below this |
+| `trust_carry_over` | `true` | keep trust between questions so it can settle |
+| `sharpen` | `true` | spread the scores out (see the warning below) |
+
+The three weights must add up to 1. Writing `0.333` three times is fine; the program
+scales them for you.
+
+### Warm-up
+
+Run a few questions first, only to work out who is good, and use that to set the
+starting trust. Agents are judged on their **round 1** answer, so nobody can earn trust
+by talking others round. Warm-up questions are not scored afterwards.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `warmup` | `0` | how many questions to use for this. 0 = none |
+| `trust_gamma` | `2.0` | sharpens the result. Accuracy 0.7 becomes 0.49, so weak agents drop further |
+
+### Learning schedule
+
+In real life you are not told the right answer every time. This lets trust learn from
+only some questions and be frozen for the rest, so you can test on the frozen ones.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `trust_learn_on` | `all` | `all`, `first` (learn from the first share), or `random` |
+| `trust_learn_share` | `0.5` | what share to learn from |
+
+### Traits
+
+Optional, off by default, because normally every agent is the same. One level per
+agent, separated by commas. Levels are `high`, `medium`, `low`.
+
+| Setting | Meaning |
+|---|---|
+| `agreeableness` | how easily an agent changes its mind, e.g. `"low,medium,medium,high"` |
+| `persuasion` | how hard an agent pushes its view, e.g. `"high,medium,medium,low"` |
+
+### Questions from a file
+
+| Setting | Meaning |
+|---|---|
+| `questions_file` | a `.yaml` or `.jsonl` file of questions. See `data/questions.yaml` |
+| `max_questions` | use only the first few, to try a big file quickly |
+
+### Running
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `parallel` | `true` | all agents think at the same time. Results are identical either way. |
+| `run_name` | `""` | names the result file. Empty means a timestamp. |
+| `skip_done` | `false` | if a result file with this `run_name` exists, skip the run |
+| `hear_yourself` | `false` | an agent also counts its own previous view as a source |
+
+### Experiments
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `compare_baseline` | `false` | run twice, without trust then with it, and compare |
+| `network_vs_network` | `false` | an all-honest network against an all-liar one |
+
+---
+
+## 7. Topologies
+
+| Name | Who hears whom |
+|---|---|
+| `mesh` | everyone hears everyone |
+| `bus` | same as mesh (one shared line) |
+| `star` | agent 0 is the hub, the rest hear only the hub |
+| `ring` | each agent hears its two neighbours in a circle |
+| `line` | a chain, the two ends hear one neighbour each |
+| `tree` | a family tree, each agent hears its parent and children |
+| `hybrid` | a hub plus a ring between the others |
+| `p2p` | agents in pairs, each hears only its partner |
+
+---
+
+## 8. The result file
+
+With `--result json`, everything is saved to `results/run_<time>.json`.
+
+```
+settings     every setting used for the run
+agents       each agent and whether it was honest or a liar
+questions    for each question:
+               rounds        what every agent answered each round,
+                             its confidence, and its belief
+               signals       agree, consist, anomaly and score per agent,
+                             so any trust value can be checked by hand
+               trust         the full trust table that round
+               influence     each agent's share of the attention
+               scores        the four numbers for this question
+summary      the four numbers averaged over all questions
+comparison   only when compare_baseline is on: without trust vs with trust
+```
+
+Everything printed on the screen is also in this file. Nothing is lost.
+
+---
+
+## 9. Files
+
+| File | What it does |
+|---|---|
+| `p2p/prompts.py` | every prompt. Change how agents talk here and nowhere else. |
+| `p2p/trust.py` | the trust formula and the three signals. Pure maths. |
+| `p2p/embed.py` | turns answers into vectors so they can be compared |
+| `p2p/metrics.py` | the four numbers |
+| `p2p/roles.py` | who lies and where they sit |
+| `p2p/results.py` | writes the JSON file |
+| `p2p/topology.py` | who can hear whom |
+| `p2p/agent.py` | one agent |
+| `p2p/network.py` | the run loop |
+| `p2p/config.py` | reads and checks config.yaml |
+| `p2p/logging_utils.py` | everything printed to the screen |
+
+---
+
+## 10. Tests
 
 ```bash
-python run_experiments.py
+python -m unittest discover -s tests
 ```
 
-A change is counted as "peer-driven" only when the agent names a peer it could
-actually hear in that topology (validated in `agent.py`).
+126 tests, all offline, no model needed. The trust tests check the formula against a
+worked example done by hand, so the maths is proved and not just assumed.
 
 ---
 
-## 7. How it works (file map)
+## 11. Things worth knowing
 
-```
-p2p/
-  __main__.py        CLI entry point (python -m p2p)
-  config.py          loads & validates config.yaml -> Config
-  topology.py        builds the comm graph: mesh / star / ring / line
-  agent.py           a PeerAgent (AutoGen AssistantAgent + Ollama) + name generator
-  logging_utils.py   verbose, colorized terminal output
-  network.py         the runtime loop: answer -> discuss -> reconsider -> report
-config.yaml          your run settings
+**`consist` rewards an agent that never moves.** A liar that repeats the same wrong
+answer every round scores well on this signal. The other two signals are what catch it.
+If your liar never changes its answer, lower `weight_consist` and raise `weight_agree`.
+
+**`scoring: "text"` needs `sharpen: true`.** Embedding models measure what an answer is
+*about*, not whether it agrees. We measured "Yes, a hot dog is a sandwich" against "No,
+a hot dog is not a sandwich" and got 0.98 similarity. Without sharpening, the defence
+would barely work. `scoring: "answer"` does not have this problem.
+
+**Give the run enough rounds.** At `trust_memory: 0.8` it takes about 3 rounds to halve
+an old trust value. With only 2 rounds, trust hardly moves and the defence will look
+like it failed when it simply ran out of time.
+
+**Half the network lying is a hard case.** When two agents say one thing and two say
+another, `agree` cannot tell which pair is honest. Expect the defence to be weaker.
+Raising `weight_anomaly` helps a little.
+
+**`parallel: true` only helps a little by itself.** The code sends all the agents'
+questions at once, but Ollama answers only a few at a time by default. We measured 30
+seconds one-after-another against 27 seconds together. To get the real speed-up, set
+this before starting Ollama:
+
+```bash
+set OLLAMA_NUM_PARALLEL=4
 ```
 
-**Flow:** `topology.py` decides each agent's neighbours → in Phase 1 every agent
-answers alone → in Phase 2 each agent hears only its neighbours' current answers
-and keeps or changes its own → when a full round passes with no changes, the
-network is stable and stops early.
+**Small models make weak liars.** A capable model often refuses to defend an obviously
+false claim, and may say "the reference answer" out loud. Use questions where the wrong
+answer is believable, not arithmetic.

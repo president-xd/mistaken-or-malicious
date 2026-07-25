@@ -123,7 +123,7 @@ class TestConcessionDetectedInTheLoop(unittest.TestCase):
         async def solve(self, q):
             return f"ANSWER: {self.answer}"
 
-        async def reconsider(self, q, heard):
+        async def reconsider(self, q, heard, trust=None):
             self.turn += 1
             if self.turn < len(self.beliefs):
                 self.belief = self.beliefs[self.turn]
@@ -134,9 +134,8 @@ class TestConcessionDetectedInTheLoop(unittest.TestCase):
 
     def test_partial_concession_is_logged(self):
         import asyncio, contextlib, io
-        from p2p import topology
-        from p2p.config import Config
-        from p2p.network import _answer_one
+        from p2p.config import Config, Question
+        from p2p.network import Network
 
         agents = {
             "Agent_A": self.Conceder("Agent_A", "408",
@@ -145,12 +144,11 @@ class TestConcessionDetectedInTheLoop(unittest.TestCase):
             "Agent_B": self.Conceder("Agent_B", "347",
                                      [{"347": 1.0}, {"347": 1.0}]),
         }
-        names = list(agents)
-        cfg = Config(questions=["Q"], rounds=2, num_agents=2, topology="mesh")
+        cfg = Config(questions=[Question("Q")], rounds=2, agents=2, topology="mesh")
+        net = Network(cfg, client=None, agents=agents)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            asyncio.run(_answer_one(cfg, agents, topology.build("mesh", names),
-                                    names, "Q"))
+            asyncio.run(net.run_question(Question("Q")))
         log = out.getvalue()
 
         self.assertIn("shifted 30%", log)       # the size of the concession
