@@ -15,10 +15,8 @@ import re
 
 from autogen_agentchat.agents import AssistantAgent
 from autogen_core import CancellationToken
-from autogen_core.models import ModelInfo
-from autogen_ext.models.ollama import OllamaChatCompletionClient
 
-from . import prompts
+from . import prompts, providers
 
 # Kept for older code that imported it. The real text lives in prompts.py.
 PERSONA = prompts.HONEST
@@ -192,22 +190,13 @@ def agent_names(count: int) -> list[str]:
     return names
 
 
-def make_model_client(model: str) -> OllamaChatCompletionClient:
-    """A client for a local Ollama server (defaults to http://localhost:11434).
+def make_model_client(model: str, provider: str = "ollama"):
+    """A client for whichever provider the config asked for.
 
-    Ollama models aren't in AutoGen's built-in registry, so we declare their
-    capabilities explicitly via ModelInfo.
+    The choice itself lives in providers.py. This stays here only so older
+    code that imported it keeps working.
     """
-    return OllamaChatCompletionClient(
-        model=model,
-        model_info=ModelInfo(
-            vision=False,
-            function_calling=False,
-            json_output=False,
-            family="unknown",
-            structured_output=False,
-        ),
-    )
+    return providers.make_client(provider, model)
 
 
 class PeerAgent:
@@ -217,7 +206,7 @@ class PeerAgent:
     _candidates: tuple = ()
     belief: dict = {}
 
-    def __init__(self, name: str, client: OllamaChatCompletionClient,
+    def __init__(self, name: str, client,
                  role: str = "honest", wrong_answer: str = "",
                  agreeableness: str = "", persuasion: str = ""):
         self.name = name
