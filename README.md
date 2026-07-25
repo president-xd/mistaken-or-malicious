@@ -1,5 +1,9 @@
 # P2P Agent Network with Dynamic Trust
 
+> **Setting things up?** See **[SETTINGS.md](SETTINGS.md)** for every command
+> and every setting, with advice on what to choose.
+> **Want the test results?** See **[TEST_REPORT.md](TEST_REPORT.md)**.
+
 A small network of AI agents that answer a question, discuss it, and change their
 minds. Some agents can be told to **lie**. The other agents defend themselves with a
 **trust score** that they update every round.

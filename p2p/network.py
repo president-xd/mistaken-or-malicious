@@ -68,6 +68,10 @@ class Network:
         self.embedder = make_embedder(cfg.scoring, cfg.embed_model)
         self.previous_vectors: dict[str, list[float]] = {}
         self.rows: list[dict] = []
+        # A copy of the trust table after each round, so we can judge
+        # how FAST and how STEADY the formula is, not just the end value.
+        self.history: list[dict] = []
+        self.last_scores: dict[str, float] = {}
         # A sleeper behaves well for the first half of the questions, then lies.
         self.learning = True   # may this question change trust?
         self.asleep = cfg.sleeper
@@ -123,8 +127,15 @@ class Network:
         cfg = self.cfg
         vectors = {n: self.embedder.vector(self.agents[n].answer) for n in self.names}
         if hasattr(self.embedder, "pad_all"):
-            width = max(len(v) for v in vectors.values())
+            # With exact matching, a new answer adds a new slot, so vectors get
+            # longer as the run goes on. Pad THIS round and the PREVIOUS round to
+            # the same width. Without this, an agent that moves to a brand new
+            # answer is compared on the old, shorter width, and looks unchanged.
+            width = max([len(v) for v in vectors.values()]
+                        + [len(v) for v in self.previous_vectors.values()] or [0])
             vectors = {n: v + [0.0] * (width - len(v)) for n, v in vectors.items()}
+            self.previous_vectors = {n: v + [0.0] * (width - len(v))
+                                     for n, v in self.previous_vectors.items()}
 
         # Work out the three signals for every agent.
         raw_agree, raw_anomaly, consist = {}, {}, {}
@@ -134,6 +145,13 @@ class Network:
             raw_anomaly[name] = trust_math.anomaly_score(vectors[name], others)
             consist[name] = trust_math.consist_score(
                 vectors[name], self.previous_vectors.get(name))
+
+        # Exact matching only uses half the range (see trust.stretch_exact).
+        if cfg.scoring == "answer":
+            raw_agree = {n: trust_math.stretch_exact(v) for n, v in raw_agree.items()}
+            consist = {n: trust_math.stretch_exact(v) for n, v in consist.items()}
+            raw_anomaly = {n: trust_math.stretch_exact(v, is_anomaly=True)
+                           for n, v in raw_anomaly.items()}
 
         # Real embeddings squash everything together, so optionally stretch the
         # range we actually saw. See trust.sharpen for why.
@@ -161,6 +179,8 @@ class Network:
                     signals[speaker]["score"], cfg.trust_memory)
 
         self.previous_vectors = vectors
+        self.last_scores = {n: signals[n]['score'] for n in signals}
+        self.history.append({i: dict(r) for i, r in self.trust.items()})
         return signals
 
     def influence(self) -> dict:
@@ -181,6 +201,12 @@ class Network:
         # CORRECT answer. It looks like a good agent, earns high trust, and only
         # starts lying later. This is the hardest case for the defence, because
         # trust is built on past behaviour.
+
+        # Remember the trust this question really starts from. The check that
+        # compares the code with the maths needs it, and after a warm-up it is
+        # NOT the `start_trust` setting any more.
+        self.trust_at_start = {i: dict(r) for i, r in self.trust.items()}
+
         wrong = question.wrong or cfg.attacker_answer
         for name in self.liars:
             self.agents[name].wrong_answer = (
@@ -258,6 +284,10 @@ class Network:
         final = {n: self.agents[n].answer for n in self.names}
         scores = metrics.summarise(first_answers, final, self.trust,
                                    self.liars, question.answer)
+        if self.use_trust and self.history:
+            scores.update(metrics.formula_report(
+                self.history, self.last_scores, self.liars,
+                cfg.trust_memory, self.trust_at_start))
         self.rows.append(scores)
         per_agent = metrics.per_agent(self.agents, self.trust, self.liars)
         log.final_report(self.agents, self.liars, question.answer, scores,
@@ -328,6 +358,7 @@ class Network:
         for agent in self.agents.values():
             await agent.reset()
         self.previous_vectors = {}
+        self.history = []
         if not self.cfg.trust_carry_over:
             self.trust = {
                 listener: {s: self.cfg.start_trust for s in self.adjacency[listener]}

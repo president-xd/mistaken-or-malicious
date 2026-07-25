@@ -146,6 +146,23 @@ def trust_after(rounds: int, start: float, score: float, memory: float) -> float
 
 # ------------------------------------------------------------ making it fair
 
+def stretch_exact(value: float, is_anomaly: bool = False) -> float:
+    """Fix the range when answers are compared exactly instead of by meaning.
+
+    With exact matching, each answer becomes its own direction. Two different
+    answers are then at right angles, and a right angle gives similarity 0.5,
+    not 0. So the signal only ever moves between 0.5 and 1.0 - half the range
+    the formula expects. A stubborn liar would score 0.667, which is above the
+    neutral 0.5, so it would look better than a fair coin.
+
+    This stretches the used half back over the full 0 to 1 range.
+    """
+    if is_anomaly:
+        # anomaly = 1 - mean similarity, so it sits in 0 .. 0.5
+        return min(1.0, max(0.0, 2 * value))
+    return min(1.0, max(0.0, 2 * value - 1))
+
+
 def sharpen(scores: dict[str, float], smallest_gap: float = 0.05) -> dict[str, float]:
     """Stretch a set of scores so small differences become visible.
 

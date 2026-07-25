@@ -53,8 +53,32 @@ class ExactMatch:
     def __init__(self):
         self._slots: dict[str, int] = {}
 
+    def _same_as_existing(self, key: str) -> str | None:
+        """Find an answer already seen that means the same thing.
+
+        Real agents write the same answer in different words: "shakespeare" and
+        "william shakespeare", or "Tokyo" and "Tokyo, Japan". Comparing the raw
+        text would call those two different answers, so two honest agents that
+        actually agree would look like they disagree.
+
+        The rule: if one answer's words are all inside the other's, they are the
+        same answer. "canberra" and "melbourne" share no words, so they stay
+        different, and so do "yes" and "no".
+        """
+        words = set(key.split())
+        if not words:
+            return None
+        for seen in self._slots:
+            other = set(seen.split())
+            if other and (words <= other or other <= words):
+                return seen
+        return None
+
     def vector(self, text: str) -> list[float]:
         key = _norm(text)
+        match = self._same_as_existing(key)
+        if match is not None:
+            key = match
         if key not in self._slots:
             self._slots[key] = len(self._slots)
         # A one-hot vector: 1 in this answer's slot, 0 everywhere else.

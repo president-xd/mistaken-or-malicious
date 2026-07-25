@@ -225,6 +225,32 @@ def _score_block(scores, use_trust) -> None:
         note = f"   (equal share would be {equal:.1%})" if equal else ""
         _line(f"  attacker influence   {show(scores['attacker_influence'])}{note}")
 
+        # These judge the FORMULA, not just whether the liar was caught.
+        if "separation_margin" in scores:
+            print()
+            _line(f"  {Style.BRIGHT}how good is the formula itself{Style.RESET_ALL}")
+            margin = scores.get("separation_margin")
+            if margin is not None:
+                verdict = ("clean split" if margin > 0
+                           else "NOT a clean split - a liar is still trusted "
+                                "more than an honest agent")
+                _line(f"    worst-case gap     {margin:+.3f}   {verdict}")
+            alarm = scores.get("false_alarm")
+            if alarm is not None:
+                verdict = "fair" if alarm < 0.1 else "one honest agent is being punished"
+                _line(f"    false alarm        {alarm:.3f}   {verdict}  (near 0 is good)")
+            found = scores.get("detection_round")
+            _line(f"    caught the liar in {found if found else 'never'} round(s)"
+                  f"   (fewer is better)")
+            moving = scores.get("still_moving")
+            if moving is not None:
+                verdict = "settled" if moving < 0.05 else "still moving - needs more rounds"
+                _line(f"    still moving       {moving:.3f}   {verdict}")
+            theory = scores.get("matches_theory")
+            if theory is not None:
+                verdict = "follows the formula" if theory < 0.1 else "CODE AND MATHS DISAGREE"
+                _line(f"    matches the maths  {theory:.4f}   {verdict}")
+
 
 def comparison(without, with_trust, left="without trust", right="with trust") -> None:
     """The headline result: the same test, run both ways."""
