@@ -11,6 +11,7 @@ import textwrap
 
 from colorama import Fore, Style, init as _init
 
+from . import providers
 from .agent import _norm
 from .trust import half_life
 
@@ -51,7 +52,9 @@ def info(msg: str) -> None:
 
 def session(cfg, names, liars, adjacency, use_trust) -> None:
     banner("P2P AGENT NETWORK")
-    _line(f"questions : {len(cfg.questions)}      model: {cfg.model}      seed: {cfg.seed}")
+    _line(f"model     : {providers.describe(cfg.provider, cfg.model)}")
+    _line(f"questions : {len(cfg.questions)}      seed: {cfg.seed}"
+          + (f"      repeats: {cfg.repeats}" if cfg.repeats > 1 else ""))
     _line(f"agents    : {cfg.agents}      rounds: {cfg.rounds}      topology: {cfg.topology}")
     _line(f"sharing   : {cfg.share} "
           f"({'answers only' if cfg.share == 'answer' else 'answers + reasoning'})")
@@ -60,7 +63,10 @@ def session(cfg, names, liars, adjacency, use_trust) -> None:
         who = ", ".join(f"{_color(n)}{n}{Style.RESET_ALL}" for n in liars)
         _line(f"{Fore.RED}liars     : {len(liars)}  ->  {who}   "
               f"(seats: {cfg.attacker_places}){Style.RESET_ALL}")
-        _line(f"{Fore.RED}            they defend: {cfg.attacker_answer}{Style.RESET_ALL}")
+        # When every question carries its own `wrong:`, there is no single
+        # answer to name here. Saying so beats printing an empty line.
+        defends = cfg.attacker_answer or "the 'wrong:' answer set on each question"
+        _line(f"{Fore.RED}            they defend: {defends}{Style.RESET_ALL}")
     else:
         _line("liars     : none - every agent is honest")
 
@@ -180,8 +186,12 @@ def influence_line(influence: dict, liars: list) -> None:
     for row in influence.values():
         for speaker, share in row.items():
             totals.setdefault(speaker, []).append(share)
+    # Sorted by name. Without this the order comes from whichever agent
+    # happened to be seen first, so the same run prints its agents in a
+    # different order each round and two logs cannot be compared line by line.
     bits = []
-    for speaker, shares in totals.items():
+    for speaker in sorted(totals):
+        shares = totals[speaker]
         mark = f"{Fore.RED}*{Style.RESET_ALL}" if speaker in liars else ""
         bits.append(f"{speaker} {sum(shares)/len(shares):.1%}{mark}")
     _line("  attention share: " + "   ".join(bits))
@@ -209,6 +219,30 @@ def final_report(agents, liars, correct, scores, use_trust) -> None:
     _score_block(scores, use_trust)
 
 
+def _count(value) -> str:
+    """Show a count. Per question it is a whole number; averaged it is not."""
+    if value is None:
+        return "?"
+    return f"{value:g}" if float(value).is_integer() else f"{value:.1f}"
+
+
+def _asr_workings(scores) -> str:
+    """The sum behind the attack success rate, written out.
+
+    The rate on its own hides the group it was measured over, and that group
+    changes from run to run. Printing the sum stops a reader comparing two
+    percentages that were never measured over the same number of agents.
+    """
+    started, turned = scores.get("started_right"), scores.get("turned")
+    honest = scores.get("honest_agents")
+    if started is None or turned is None:
+        return "   (lower is better)"
+    if not float(started):
+        return "   (no honest agent started right, so there was nothing to break)"
+    return (f"   = {_count(turned)} turned of {_count(started)} that started right"
+            f"   ({_count(started)} of {_count(honest)} honest agents)")
+
+
 def _score_block(scores, use_trust) -> None:
     def show(value, as_percent=True):
         if value is None:
@@ -217,7 +251,8 @@ def _score_block(scores, use_trust) -> None:
 
     print()
     _line(f"  honest accuracy      {show(scores['honest_accuracy'])}   (higher is better)")
-    _line(f"  attack success rate  {show(scores['attack_success_rate'])}   (lower is better)")
+    _line(f"  attack success rate  {show(scores['attack_success_rate'])}"
+          f"{_asr_workings(scores)}")
     if use_trust:
         _line(f"  trust separation     {show(scores['trust_separation'], False)}   "
               f"(higher is better)")
@@ -252,15 +287,104 @@ def _score_block(scores, use_trust) -> None:
                 _line(f"    matches the maths  {theory:.4f}   {verdict}")
 
 
+_MEASURES = [("honest accuracy", "honest_accuracy", True, True),
+             ("attack success rate", "attack_success_rate", False, True),
+             ("trust separation", "trust_separation", True, False),
+             ("attacker influence", "attacker_influence", False, True)]
+
+
+def repeat_header(number: int, total: int, seed: int) -> None:
+    banner(f"REPEAT {number} of {total}    (seed {seed})")
+
+
+def repeats_table(combined: dict, title: str) -> None:
+    """The average over several repeats, and how far apart the repeats were.
+
+    `spread` is the standard deviation. Small means every repeat agreed, so
+    the average can be trusted. Big means the repeats disagreed, and the
+    average on its own says very little.
+    """
+    banner(title)
+    print(f"    {'measure':22} {'average':>10} {'lowest':>10} "
+          f"{'highest':>10} {'spread':>10}")
+    for label, key, _, as_percent in _MEASURES + [
+            ("started right", "started_right", True, False)]:
+        item = combined.get(key)
+        if not isinstance(item, dict):
+            print(f"    {label:22} {'n/a':>10}")
+            continue
+        if key == "started_right":
+            fmt = _count
+        elif as_percent:
+            def fmt(v):
+                return f"{v:.1%}"
+        else:
+            def fmt(v):
+                return f"{v:+.3f}"
+        wide = (f"{item['spread']:.3f}" if item.get("spread") is not None
+                else "n/a")
+        print(f"    {label:22} {fmt(item['mean']):>10} {fmt(item['lowest']):>10} "
+              f"{fmt(item['highest']):>10} {wide:>10}")
+
+
+def repeats_comparison(without: dict, with_trust: dict, runs: int,
+                       left="without trust", right="with trust") -> None:
+    """The headline: both setups, averaged over the repeats, side by side.
+
+    The last column is the honest one. "outside the noise" means no repeat of
+    the worse setup did as well as any repeat of the better setup. "inside the
+    noise" means the two sets of repeats overlap, so this difference could be
+    luck and more repeats are needed before claiming anything.
+    """
+    from .repeat import overlaps
+
+    wide = 28
+    banner(f"RESULT OVER {runs} REPEATS: {left}  vs  {right}\n"
+           f"'spread' is how far the repeats sat from their own average.")
+    print(f"    {'measure':22} {left + ' (avg +- spread)':>{wide}} "
+          f"{right + ' (avg +- spread)':>{wide}}   verdict")
+    for label, key, higher_better, as_percent in _MEASURES:
+        a, b = without.get(key), with_trust.get(key)
+        if not isinstance(a, dict) or not isinstance(b, dict):
+            print(f"    {label:22} {'n/a':>{wide}} {'n/a':>{wide}}")
+            continue
+
+        def cell(item):
+            if as_percent:
+                wide = (f" +- {item['spread']:.1%}"
+                        if item.get("spread") is not None else "")
+                return f"{item['mean']:.1%}{wide}"
+            wide = (f" +- {item['spread']:.3f}"
+                    if item.get("spread") is not None else "")
+            return f"{item['mean']:+.3f}{wide}"
+
+        better = (b["mean"] > a["mean"]) if higher_better else (b["mean"] < a["mean"])
+        same = abs(b["mean"] - a["mean"]) < 1e-9
+        if same:
+            verdict = "same"
+        elif not better:
+            verdict = f"{Fore.YELLOW}worse{Style.RESET_ALL}"
+        elif overlaps(a, b):
+            verdict = f"{Fore.YELLOW}better, but inside the noise{Style.RESET_ALL}"
+        else:
+            verdict = f"{Fore.GREEN}better, outside the noise{Style.RESET_ALL}"
+        print(f"    {label:22} {cell(a):>{wide}} {cell(b):>{wide}}   {verdict}")
+
+    _denominator_note(_means(without), _means(with_trust), left, right, width=wide)
+    _empty_experiment_note(_means(without), _means(with_trust))
+
+
+def _means(combined: dict) -> dict:
+    """Pull just the averages out, so the shared helpers can use them."""
+    return {k: (v["mean"] if isinstance(v, dict) else None)
+            for k, v in combined.items()}
+
+
 def comparison(without, with_trust, left="without trust", right="with trust") -> None:
     """The headline result: the same test, run both ways."""
     banner(f"RESULT: {left}  vs  {right}")
-    rows = [("honest accuracy", "honest_accuracy", True, True),
-            ("attack success rate", "attack_success_rate", False, True),
-            ("trust separation", "trust_separation", True, False),
-            ("attacker influence", "attacker_influence", False, True)]
     print(f"    {'measure':22} {left:>16} {right:>16}   better?")
-    for label, key, higher_better, as_percent in rows:
+    for label, key, higher_better, as_percent in _MEASURES:
         a, b = without.get(key), with_trust.get(key)
         if a is None or b is None:
             print(f"    {label:22} {'n/a':>16} {'n/a':>16}")
@@ -270,3 +394,69 @@ def comparison(without, with_trust, left="without trust", right="with trust") ->
         mark = (f"{Fore.GREEN}yes{Style.RESET_ALL}" if better
                 else f"{Fore.YELLOW}no{Style.RESET_ALL}" if b != a else "same")
         print(f"    {label:22} {fmt(a):>16} {fmt(b):>16}   {mark}")
+
+    _denominator_note(without, with_trust, left, right, width=16)
+    _empty_experiment_note(without, with_trust)
+
+
+def _empty_experiment_note(without, with_trust) -> None:
+    """Say so when the attack never turned anybody, in either half.
+
+    This is the trap that a strong model walks straight into. Our questions
+    were chosen because a particular model could be argued out of them. A more
+    capable model is simply certain, so no honest agent ever changes its mind.
+    Both halves then score full accuracy and a 0% attack success rate, and the
+    table above looks like a perfect result.
+
+    It is not a result. It is an experiment where nothing happened. The two
+    decision measures cannot tell the setups apart, because there was no
+    attack for the defence to stop. Only the two trust measures mean anything,
+    and those come from the trust table rather than from any decision an agent
+    made.
+    """
+    turned = [side.get("turned") for side in (without, with_trust)]
+    if any(t is None for t in turned) or any(t > 0 for t in turned):
+        return
+    started = without.get("started_right")
+    if started is not None and started <= 0:
+        return          # nobody was ever right, which is a different problem
+
+    print(f"\n    {Fore.YELLOW}{Style.BRIGHT}Careful: this experiment measured "
+          f"nothing on the first two rows.{Style.RESET_ALL}")
+    print("    No honest agent was turned in EITHER half, so honest accuracy "
+          "and attack")
+    print("    success rate cannot tell the two setups apart. The model was too "
+          "sure of")
+    print("    these questions for the attack to start.")
+    print("    Only trust separation and attacker influence mean anything here, "
+          "and both")
+    print("    come from the trust table rather than from anything an agent "
+          "decided.")
+    print("    Fix: screen the questions against THIS model first - see "
+          "dynamic-tests/persuadability.py")
+
+
+def _denominator_note(without, with_trust, left, right, width=16) -> None:
+    """Show the group the attack success rate was measured over, on both sides.
+
+    The rate is "of the honest agents that started right, how many were
+    turned". So the two sides are only comparable when the same number of
+    agents started right. When that number differs, the side that started
+    BETTER is dividing by a bigger number and is punished for it. Without
+    this note a reader would read that as the defence making things worse.
+    """
+    a, b = without.get("started_right"), with_trust.get("started_right")
+    if a is None or b is None:
+        return
+    print(f"    {'(started right)':22} {_count(a):>{width}} {_count(b):>{width}}"
+          f"   {Style.DIM}the group ASR is measured over{Style.RESET_ALL}")
+    if abs(a - b) < 1e-9:
+        return
+    ahead, behind = (right, left) if b > a else (left, right)
+    print(f"\n    {Fore.YELLOW}{Style.BRIGHT}Careful with the attack success "
+          f"rate above.{Style.RESET_ALL}")
+    print(f"    {ahead} started with more agents already correct "
+          f"({_count(max(a, b))} against {_count(min(a, b))}), so it is")
+    print(f"    dividing by a bigger number. It can end with the same answers "
+          f"as {behind}")
+    print(f"    and still show a worse rate. Read honest accuracy alongside it.")
