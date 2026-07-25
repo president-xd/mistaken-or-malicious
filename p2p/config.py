@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from . import topology
+from . import providers, topology
 from .schedule import LEARN_MODES
 
 SHARE_MODES = ("answer", "both")
@@ -40,7 +40,12 @@ class Config:
     questions: list[Question] = field(default_factory=list)
 
     # --- model ---
+    # Where the model runs: "ollama" on your own machine, or "deepseek" over
+    # the API. The default stays local, so nothing costs money by accident.
+    provider: str = "ollama"
     model: str = "llama3.2:1b"
+    # The embedding model is only used by scoring: "text", and it always runs
+    # locally on Ollama, whichever provider answers the questions.
     embed_model: str = "nomic-embed-text"
 
     # --- network ---
@@ -83,6 +88,11 @@ class Config:
     parallel: bool = True
     run_name: str = ""
     skip_done: bool = False
+    # How many times to run the WHOLE experiment. Each repeat uses a different
+    # seed, and the result is the average plus how far apart the repeats were.
+    # 1 means a single run, which is fine for trying things out but is not
+    # enough to report as a finding.
+    repeats: int = 1
 
     # --- experiment modes ---
     compare_baseline: bool = False
@@ -143,9 +153,30 @@ def _read_questions_file(path: str) -> list[Question]:
     return out
 
 
-def load_config(path: str, share: str | None = None) -> Config:
+def load_config(path: str, share: str | None = None,
+                provider: str | None = None, model: str | None = None) -> Config:
+    """Read the config file. The three arguments are command line overrides.
+
+    When you switch provider on the command line the old model name is usually
+    wrong for the new provider, so if you give `--provider` without `--model`
+    we fall back to that provider's default model rather than sending an
+    ollama model name to the API.
+    """
     with open(path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
+
+    from_file = str(raw.get("provider", "ollama")).lower()
+    chosen = str(provider or from_file).lower()
+
+    if model:
+        chosen_model = model
+    elif chosen != from_file:
+        # The provider was switched on the command line and no model was named.
+        # The model in the file belongs to the OTHER provider, so using it would
+        # send an ollama model name to the API. Use this provider's default.
+        chosen_model = providers.DEFAULT_MODEL.get(chosen, "")
+    else:
+        chosen_model = str(raw.get("model", "llama3.2:1b"))
 
     # Questions come either from a file or straight from this config.
     if raw.get("questions_file"):
@@ -162,7 +193,8 @@ def load_config(path: str, share: str | None = None) -> Config:
 
     cfg = Config(
         questions=questions,
-        model=str(raw.get("model", "llama3.2:1b")),
+        provider=chosen,
+        model=chosen_model,
         embed_model=str(raw.get("embed_model", "nomic-embed-text")),
         # "agents" is the new name; "num_agents" still works.
         agents=int(raw.get("agents", raw.get("num_agents", 3))),
@@ -194,6 +226,7 @@ def load_config(path: str, share: str | None = None) -> Config:
         parallel=bool(raw.get("parallel", True)),
         run_name=str(raw.get("run_name", "")),
         skip_done=bool(raw.get("skip_done", False)),
+        repeats=int(raw.get("repeats", 1)),
         compare_baseline=bool(raw.get("compare_baseline", False)),
         network_vs_network=bool(raw.get("network_vs_network", False)),
     )
@@ -210,8 +243,14 @@ def _check(cfg: Config, path: str) -> None:
         stop("'agents' must be at least 2 - one agent has nobody to talk to.")
     if cfg.rounds < 1:
         stop("'rounds' must be at least 1.")
+    if cfg.repeats < 1:
+        stop("'repeats' must be at least 1.")
     if cfg.share not in SHARE_MODES:
         stop(f"'share' must be one of: {', '.join(SHARE_MODES)}")
+    if cfg.provider not in providers.PROVIDERS:
+        stop(f"'provider' must be one of: {', '.join(providers.PROVIDERS)}")
+    if not cfg.model:
+        stop("'model' is empty. Name the model to use.")
     if cfg.scoring not in SCORING_MODES:
         stop(f"'scoring' must be one of: {', '.join(SCORING_MODES)}")
     if cfg.topology not in topology.available():
