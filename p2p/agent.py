@@ -10,6 +10,7 @@ peer genuinely "remembers" its reasoning while it debates.
 
 from __future__ import annotations
 
+import json
 import re
 
 from autogen_agentchat.agents import AssistantAgent
@@ -29,12 +30,137 @@ PERSONA = (
 # mistaken for the verdict. We also take the LAST match, because a model that
 # restates itself puts its real conclusion at the end.
 _ANSWER_RE = re.compile(r"^\W{0,4}ANSWER\W{0,4}:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
+# DOTALL so the JSON object may sit on the line AFTER the label, which models do.
+_BELIEF_RE = re.compile(r"^\W{0,4}BELIEF\W{0,4}:\s*(\{.*?\})",
+                        re.IGNORECASE | re.MULTILINE | re.DOTALL)
 _CONVINCED_RE = re.compile(r"^\W{0,4}CONVINCED_BY\W{0,4}:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
 _NO_ONE = {"none", "no one", "nobody", "n/a", "na", "myself", "self", ""}
 _TRIM = " *_\"'`"
 # Lines where an agent is quoting/discussing a peer rather than reasoning itself.
 _QUOTES_PEER_RE = re.compile(
     r"(agent_\w+|peer_\w+|their reasoning|says\s*:)", re.IGNORECASE)
+
+
+# Used only when salvaging a reply that has no ANSWER line.
+_EQUALS_RE = re.compile(r"=|\bequals\b|\bis equal to\b", re.IGNORECASE)
+_YESNO_RE = re.compile(r"\b(yes|no)\b", re.IGNORECASE)
+_NUMBER_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
+_VALUE_WORDS = 3        # up to this many words is a value, not a sentence
+_MAX_ANSWER_WORDS = 6   # a stated ANSWER longer than this is prose -> re-ask
+_SHORT_ANSWER = 60      # hard cap on anything we salvage from prose
+
+# Sent ALONE when the model forgot its ANSWER line. Re-sending the whole question
+# just reproduces the same failure, so instead we ask only for the missing line --
+# the agent still has its own reply in context and only has to name its verdict.
+_RETRY_NUDGE = (
+    "Your last reply is missing its final ANSWER line. Do not explain anything "
+    "again. Reply with that ONE line only, in exactly this form:\n"
+    "ANSWER: <the answer itself, in as few words as possible. No explanation.>"
+)
+
+
+def _salvage(text: str) -> str:
+    """Best-effort answer when the model omitted its ANSWER line even after a retry.
+
+    The goal is a SHORT, comparable value. A whole equation ("340 + 68 = 408") or
+    a paragraph of prose can never match a peer who simply wrote "408", and if it
+    is stored it also gets forwarded to neighbours as that agent's answer, which
+    pollutes their prompts. So we peel off the conclusion, and if the reply ends
+    in prose we look for a short verdict instead.
+    """
+    # Ignore bookkeeping lines: a reply that ends on "CONVINCED_BY: Agent_C"
+    # would otherwise have that stored as its answer.
+    lines = [ln.strip() for ln in text.splitlines()
+             if ln.strip() and not _CONVINCED_RE.match(ln.strip())]
+    if not lines:
+        return ""
+
+    return _condense(lines[-1], text)
+
+
+def _condense(value: str, context: str = "") -> str:
+    """Reduce a stated answer to something short and comparable.
+
+    Applied to the ANSWER line as well as to salvaged text, because a model will
+    happily write a whole sentence after "ANSWER:" -- and two agents that both
+    mean "no" can then never be seen to agree.
+    """
+    # "340 + 68 = 408" / "17 * 24 equals 408" -> keep only the final value.
+    tail = _EQUALS_RE.split(value)[-1].strip(_TRIM).rstrip(".").strip()
+
+    # A couple of words is already a value ("408", "No", "Sydney") -- keep it.
+    if tail and len(tail.split()) <= _VALUE_WORDS:
+        return tail
+
+    # It is a sentence. Pull out an unambiguous verdict if there is one, looking
+    # at the sentence itself before the wider reply.
+    for scope in (value, context):
+        for pattern in (_YESNO_RE, _NUMBER_RE):
+            found = pattern.findall(scope)
+            if found:
+                return found[-1]
+
+    # Nothing quotable. Keep it short so it cannot flood a neighbour's prompt.
+    return (tail or value)[:_SHORT_ANSWER]
+
+
+def parse_belief(text: str) -> dict:
+    """Pull the BELIEF JSON object out of a reply, or {} if absent/malformed."""
+    hits = _BELIEF_RE.findall(text)
+    for raw in reversed(hits):
+        try:
+            got = json.loads(raw)
+            if isinstance(got, dict):
+                return got
+        except (ValueError, TypeError):
+            continue
+    return {}
+
+
+def normalize_belief(raw: dict, candidates: list[str], fallback: str) -> dict:
+    """Map a raw belief onto the answers in play and rescale it to sum to 1.
+
+    Unlike a fixed A-E question, our candidate set is whatever answers currently
+    exist in the network, so keys are matched to them case/punctuation
+    insensitively. Negative or unparseable weights are dropped, unknown keys are
+    ignored, and an empty result falls back to certainty in `fallback` -- so a
+    model that skips or mangles the line still yields a valid distribution.
+    """
+    options = list(dict.fromkeys([c for c in candidates if c] + ([fallback] if fallback else [])))
+    if not options:
+        return {}
+    out = {c: 0.0 for c in options}
+    index = {_norm(c): c for c in options}
+    for key, value in (raw or {}).items():
+        target = index.get(_norm(str(key)))
+        if target is None:
+            continue
+        try:
+            out[target] += max(0.0, float(value))
+        except (TypeError, ValueError):
+            continue
+    total = sum(out.values())
+    if total <= 0:
+        if fallback in out:
+            return {c: (1.0 if c == fallback else 0.0) for c in options}
+        return {c: 1.0 / len(options) for c in options}
+    return {c: v / total for c, v in out.items()}
+
+
+def belief_shift(before: dict, after: dict) -> float:
+    """How much probability mass moved between two beliefs (0 = none, 1 = all).
+
+    Total-variation distance: half the sum of absolute changes. This is the
+    number that makes a PARTIAL concession visible -- an agent can move 0.3 of
+    its mass toward a peer while its top answer never changes.
+    """
+    keys = set(before) | set(after)
+    return sum(abs(after.get(k, 0.0) - before.get(k, 0.0)) for k in keys) / 2
+
+
+def top_answer(belief: dict) -> str:
+    """The answer holding the most belief mass."""
+    return max(belief, key=belief.get) if belief else ""
 
 
 def _norm(answer: str) -> str:
@@ -93,18 +219,26 @@ def make_model_client(model: str) -> OllamaChatCompletionClient:
 class PeerAgent:
     """One node in the network."""
 
+    # Class-level defaults so partially-built instances stay valid.
+    _candidates: tuple = ()
+    belief: dict = {}
+
     def __init__(self, name: str, client: OllamaChatCompletionClient):
         self.name = name
         self.answer = ""       # current one-line answer (the ANSWER: value)
+        self.belief = {}       # answer -> probability, over the answers in play
         self.reasoning = ""    # full text of the latest reply
         self.parsed = True     # did the latest reply contain a usable ANSWER line?
+        self.retried = False   # did the latest turn need a re-ask to parse?
+        self._candidates = []  # answers the current belief may range over
         self._agent = AssistantAgent(
             name=name,
             model_client=client,
             system_message=(
                 f"You are {name}, {PERSONA} "
-                "Always end your reply with a line exactly like:\n"
-                "ANSWER: <your final answer>"
+                "EVERY reply you write must finish with this line, and nothing "
+                "may come after it:\n"
+                "ANSWER: <the answer itself, in as few words as possible. No explanation.>"
             ),
         )
 
@@ -112,20 +246,36 @@ class PeerAgent:
         result = await self._agent.run(task=prompt)
         return result.messages[-1].content.strip()
 
+    async def _ask(self, prompt: str) -> str:
+        """Run a prompt and absorb the reply, retrying ONCE if the ANSWER line is
+        missing. Small models drop the format often, and an unparsed reply used
+        to freeze an agent's answer for the rest of the run."""
+        self.retried = False
+        text = await self._run(prompt)
+        self._absorb(text)
+        if not self.parsed:
+            self.retried = True
+            # Ask ONLY for the missing line, then absorb both together so the
+            # original reasoning is kept and the verdict comes from the follow-up.
+            text = f"{text}\n{await self._run(_RETRY_NUDGE)}"
+            self._absorb(text)
+        return text
+
     async def reset(self) -> None:
         """Clear this agent's memory (via the SDK) before a new question."""
         await self._agent.on_reset(CancellationToken())
         self.answer = ""
+        self.belief = {}
         self.reasoning = ""
 
     async def solve(self, question: str) -> str:
         """Phase 1: answer independently, having heard no peer yet."""
-        text = await self._run(
+        return await self._ask(
             f"Solve this question on your own:\n{question}\n\n"
-            "Show brief reasoning, then the ANSWER line."
+            "Show brief reasoning. Then finish with this line, with NOTHING "
+            "after it:\n"
+            "ANSWER: <the answer itself, in as few words as possible. No explanation.>"
         )
-        self._absorb(text)
-        return text
 
     def argument(self) -> str:
         """This peer's OWN reasoning, ready to share with neighbours.
@@ -155,15 +305,24 @@ class PeerAgent:
             for n, (a, why) in heard.items()
         ) or "(nobody)"
         previous = self.answer
-        text = await self._run(
+        # The belief ranges over every answer alive in this agent's neighbourhood,
+        # so it can put weight on a peer's answer without adopting it outright.
+        self._candidates = list(dict.fromkeys(
+            [previous] + [a for a, _ in heard.values()]))
+        options = ", ".join(f'"{c}"' for c in self._candidates)
+        text = await self._ask(
             f"The question is:\n{question}\n\n"
             f"Your current answer: {previous}\n\n"
             f"Peers you can hear right now:\n{peers}\n\n"
             "If a peer's reasoning is more convincing, adopt the better answer and "
-            "briefly say why. Otherwise defend yours.\n"
-            "Add a line naming who changed your mind (a peer name, or 'none'):\n"
-            "CONVINCED_BY: <name or none>\n"
-            "Then end with the ANSWER line."
+            "briefly say why. Otherwise defend yours.\n\n"
+            "Finish with these three lines, in this order, and write NOTHING after "
+            "them:\n"
+            "CONVINCED_BY: <peer name, or none>\n"
+            f"BELIEF: one-line JSON splitting 1.0 across {options}, e.g. "
+            '{"first": 0.7, "second": 0.3}. Use fractions to show how much you '
+            "credit each - only use 1.0 if a peer's view has no merit at all\n"
+            "ANSWER: <the answer itself, in as few words as possible. No explanation.>"
         )
         self._absorb(text)
         # Compare normalized: "Yes" -> "yes." is NOT a change of mind.
@@ -179,8 +338,21 @@ class PeerAgent:
         """
         self.reasoning = text
         hits = _ANSWER_RE.findall(text)
-        self.parsed = bool(hits)
         if hits:
-            self.answer = hits[-1].strip(_TRIM)
-        elif not self.answer:  # no ANSWER line at all on the very first turn
-            self.answer = text.splitlines()[-1].strip(_TRIM) if text else ""
+            self.answer = _condense(hits[-1].strip(_TRIM), text)
+            # An ANSWER line holding a whole sentence ("It is incorrect to
+            # classify a hot dog as a sandwich") is not a comparable verdict --
+            # two agents that both mean "no" would never be seen to agree. Treat
+            # it as unparsed so the retry asks for the short form.
+            self.parsed = len(self.answer.split()) <= _MAX_ANSWER_WORDS
+        else:
+            self.parsed = False
+            if not self.answer:  # no ANSWER line at all on the very first turn
+                self.answer = _salvage(text)
+        # Otherwise keep the previous answer -- but the caller WARNs, because a
+        # real change may have been stated in prose we could not read.
+
+        # Belief always ends up valid: a missing or malformed BELIEF line simply
+        # collapses to certainty in the stated answer, so it never fails a run.
+        self.belief = normalize_belief(
+            parse_belief(text), self._candidates, self.answer)

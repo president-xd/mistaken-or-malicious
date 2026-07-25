@@ -71,9 +71,17 @@ def thinking(name: str) -> None:
     _line(f"{_color(name)}{name}{Style.RESET_ALL} is thinking...")
 
 
-def hearing(name: str, peers: list[str]) -> None:
-    who = ", ".join(peers) if peers else "no one"
-    _line(f"{_color(name)}{name}{Style.RESET_ALL} listens to: {who}")
+def hearing(name: str, peers) -> None:
+    """Show who this agent hears AND the frozen answer it received from each.
+
+    Printing the values makes the simultaneous update auditable: within one
+    round every agent must report the same value for any given peer.
+    """
+    if isinstance(peers, dict):
+        who = ", ".join(f"{n}={a}" for n, (a, _) in peers.items())
+    else:  # plain list of names
+        who = ", ".join(peers)
+    _line(f"{_color(name)}{name}{Style.RESET_ALL} listens to: {who or 'no one'}")
 
 
 def reply(name: str, text: str) -> None:
@@ -96,12 +104,34 @@ def held(name: str, answer: str) -> None:
     _line(f"{_color(name)}{name} held its answer -> {answer}{Style.RESET_ALL}")
 
 
-def round_summary(r: int, changes: int) -> None:
-    _line(f"round {r} complete: {Style.BRIGHT}{changes}{Style.RESET_ALL} agent(s) changed their mind")
+def belief(name: str, dist: dict) -> None:
+    """Show how an agent splits its confidence across the answers in play."""
+    if not dist or len(dist) < 2:
+        return
+    parts = " ".join(f"{a}={p:.0%}" for a, p in
+                     sorted(dist.items(), key=lambda kv: -kv[1]) if p > 0.005)
+    _line(f"{_color(name)}{name}{Style.RESET_ALL} belief: {parts}")
+
+
+def conceded(name: str, shift: float, toward: str) -> None:
+    """A partial concession -- answer unchanged, but real mass moved to a peer."""
+    where = f" toward {toward}" if toward else ""
+    _line(f"{Fore.MAGENTA}{Style.BRIGHT}{name} shifted {shift:.0%} of its belief"
+          f"{where} - but kept its answer{Style.RESET_ALL}")
+
+
+def round_summary(r: int, changes: int, moves: int = 0) -> None:
+    extra = f", {Style.BRIGHT}{moves}{Style.RESET_ALL} shifted belief without switching" if moves else ""
+    _line(f"round {r} complete: {Style.BRIGHT}{changes}{Style.RESET_ALL} agent(s) changed their mind{extra}")
 
 
 def info(msg: str) -> None:
     _line(msg)
+
+
+def retry(name: str) -> None:
+    """The agent forgot its ANSWER line and was asked again."""
+    _line(f"{Fore.YELLOW}{name}: no ANSWER line - re-asking once...{Style.RESET_ALL}")
 
 
 def warn(name: str, msg: str) -> None:
@@ -114,7 +144,11 @@ def warn(name: str, msg: str) -> None:
 def final(agents: dict) -> None:
     banner("FINAL ANSWERS")
     for name, a in agents.items():
-        _line(f"{_color(name)}{name}{Style.RESET_ALL}: {a.answer}")
+        # Confidence = the mass the agent still puts on its own answer. A low
+        # number means it is holding that answer only weakly.
+        conf = a.belief.get(a.answer)
+        note = f"   (confidence {conf:.0%})" if conf is not None and len(a.belief) > 1 else ""
+        _line(f"{_color(name)}{name}{Style.RESET_ALL}: {a.answer}{note}")
     # Same normalization the change-detector uses, so the two always agree.
     unique = {_norm(a.answer) for a in agents.values()}
     if len(unique) == 1:

@@ -7,7 +7,7 @@
 # One or more questions -- the agents answer them one by one.
 questions:
   - "What is 17 * 24? Show your working."
-  - "Is a hot dog a sandwich? Answer yes or no and justify briefly."
+#  - "Is a hot dog a sandwich? Answer yes or no and justify briefly."
 # (A single 'question: "..."' string also still works.)
 
 model: "llama3.2:1b"     # any model pulled into your local Ollama

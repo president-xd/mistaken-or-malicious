@@ -16,8 +16,18 @@ from __future__ import annotations
 
 from . import logging_utils as log
 from . import topology
-from .agent import PeerAgent, agent_names, make_model_client
+from .agent import PeerAgent, agent_names, belief_shift, make_model_client
 from .config import Config
+
+# Belief mass a peer must gain before we call it a partial concession.
+_CONCESSION = 0.05
+
+
+def _gained_most(before: dict, after: dict, own: str) -> str:
+    """Which rival answer this agent shifted the most weight onto."""
+    rivals = {k: after.get(k, 0.0) - before.get(k, 0.0) for k in after if k != own}
+    best = max(rivals, key=rivals.get, default="")
+    return best if rivals.get(best, 0.0) > 0 else ""
 
 
 async def run_network(cfg: Config) -> None:
@@ -51,35 +61,58 @@ async def _answer_one(cfg, agents, adjacency, names, question) -> None:
         log.thinking(name)
         text = await agents[name].solve(question)
         log.reply(name, text)
+        if agents[name].retried:
+            log.retry(name)
         if not agents[name].parsed:
-            log.warn(name, "no ANSWER line - fell back to the last line of the reply")
+            log.warn(name, "still no ANSWER line after retry - salvaged from the reply")
         log.held(name, agents[name].answer)
 
     # Rounds 2..N -- discussion: peers hear neighbours and may change their mind.
     for r in range(2, cfg.rounds + 1):
         log.phase(f"ROUND {r}/{cfg.rounds} - discussion")
+
+        # SIMULTANEOUS UPDATE. Every agent's position is frozen here, before any
+        # agent replies, and the whole round is served from this one snapshot.
+        # So nobody can see an answer produced in the round they are taking part
+        # in: there is no first mover, no stale reader, and information travels
+        # exactly one hop per round no matter what order the turns happen in.
+        # In "answer" mode a peer sends only its conclusion; in "both" mode it
+        # also sends the reasoning, so peers debate arguments not assertions.
+        snapshot = {
+            m: (agents[m].answer,
+                agents[m].argument() if cfg.share == "both" else "")
+            for m in names
+        }
+
         changes = 0
+        moves = 0
         for name in names:
-            # In "answer" mode a peer sends only its conclusion; in "both" mode
-            # it also sends the reasoning behind it, so peers debate arguments
-            # instead of bare assertions.
-            neighbours = {
-                m: (agents[m].answer,
-                    agents[m].argument() if cfg.share == "both" else "")
-                for m in adjacency[name]
-            }
-            log.hearing(name, list(neighbours))
-            text, did_change, convinced_by = await agents[name].reconsider(question, neighbours)
+            agent = agents[name]
+            neighbours = {m: snapshot[m] for m in adjacency[name]}
+            log.hearing(name, neighbours)
+            before = dict(agent.belief)
+            text, did_change, convinced_by = await agent.reconsider(question, neighbours)
             log.reply(name, text)
-            if not agents[name].parsed:
-                log.warn(name, "no ANSWER line - previous answer kept, change may be lost")
+            if agent.retried:
+                log.retry(name)
+            if not agent.parsed:
+                log.warn(name, "still no ANSWER line after retry - previous answer kept, "
+                               "change may be lost")
             if did_change:
                 changes += 1
                 log.changed(name, convinced_by)
             else:
-                log.held(name, agents[name].answer)
-        log.round_summary(r, changes)
-        if changes == 0:
+                log.held(name, agent.answer)
+            log.belief(name, agent.belief)
+
+            # A PARTIAL concession: the agent kept its answer but moved real
+            # belief mass toward a peer. Invisible in an answer-only system.
+            shift = belief_shift(before, agent.belief)
+            if before and not did_change and shift >= _CONCESSION:
+                moves += 1
+                log.conceded(name, shift, _gained_most(before, agent.belief, agent.answer))
+        log.round_summary(r, changes, moves)
+        if changes == 0 and moves == 0:
             log.info("No agent changed its mind - network is stable. Stopping early.")
             break
 
