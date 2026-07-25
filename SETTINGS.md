@@ -51,9 +51,10 @@ weight_anomaly: 0.5
 
 warmup: 1
 parallel: true
+repeats: 5                           # never report a single run
 ```
 
-Three things that matter most:
+Four things that matter most:
 
 1. **Use an 8-billion model.** A 1-billion model gets the right answer 1 time in
    4, so its honest agents cannot agree with each other, and the defence has
@@ -62,6 +63,8 @@ Three things that matter most:
    trust to move meaningfully. With 2 rounds nothing happens.
 3. **Set weights to 0.5 / 0.0 / 0.5.** Measured as better than 1/3 each in every
    case tested.
+4. **Set `repeats: 5`.** One run is luck, not a result. See
+   [`repeats`](#repeats--do-not-report-a-single-run).
 
 ---
 
@@ -326,9 +329,42 @@ you are studying the traits themselves.
 | Setting | Default | What to set | Why |
 |---|---|---|---|
 | `parallel` | true | `true` | all agents think at once. Results are proven identical |
+| `repeats` | 1 | **5** for anything you report | runs the whole experiment 5 times and averages it |
 | `run_name` | `""` | a name like `"exp1"` | names the result file |
 | `skip_done` | false | `true` for long batches | skips a run that already finished |
 | `hear_yourself` | false | `false` | an agent counts its own view as one of its sources |
+
+### `repeats` — do not report a single run
+
+One run of one setup is **not a result**. With 3 honest agents, one agent
+changing its mind moves a score by 33 percentage points. Two runs of the very
+same setup can score 25% and 50% purely by luck.
+
+`repeats: 5` runs the whole experiment five times, each with its own seed, and
+prints:
+
+| Column | What it means |
+|---|---|
+| average | the mean over the repeats. This is the number to quote |
+| lowest / highest | the worst and best repeat |
+| spread | how far the repeats sat from their own average |
+
+`spread` is the ordinary sample standard deviation. Small means every repeat
+agreed, so the average can be trusted. Big means the repeats disagreed, and the
+average alone says very little.
+
+With `compare_baseline: true` you also get a verdict column:
+
+- **better, outside the noise** — no repeat of the worse setup did as well as
+  any repeat of the better one. This is a claim you can make.
+- **better, but inside the noise** — the two sets of repeats overlap, so the
+  difference could be luck. Run more repeats before claiming anything.
+
+Inside one repeat, both halves of a comparison use that repeat's seed, so they
+are still tested under identical conditions as each other.
+
+**Cost.** `repeats: 5` with `compare_baseline: true` is ten full runs. Try the
+setup once with `repeats: 1` before committing to the long version.
 
 **About speed.** `parallel: true` sends all the questions at once, but Ollama
 answers only a few at a time by default. Measured: 30 seconds one after another
@@ -389,10 +425,15 @@ weight_consist: 0.0
 weight_anomaly: 0.5
 warmup: 1
 compare_baseline: true
+repeats: 5
 run_name: "main_result"
 ```
 
 Run it with `--result json`.
+
+`repeats: 5` with `compare_baseline: true` means ten full runs, so this takes
+about five times as long as the estimate above. Do it once with `repeats: 1`
+first to check the setup, then run the long one.
 
 ### 3. The liar at the hub (strongest attack)
 
@@ -433,6 +474,7 @@ rather than half an hour.
 |---|---|
 | `agents: 1` | must be at least 2, one agent has nobody to talk to |
 | `rounds: 0` | must be at least 1 |
+| `repeats: 0` | must be at least 1 |
 | `topology: "banana"` | unknown, and lists the eight valid names |
 | `share: "silly"` | must be `answer` or `both` |
 | `scoring: "silly"` | must be `answer` or `text` |
