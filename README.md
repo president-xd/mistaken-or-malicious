@@ -142,6 +142,32 @@ the defence working.
 Compare **attacker influence** against the **equal share** printed next to it. Below the
 equal share means the defence is working.
 
+### Read the attack success rate carefully
+
+It is measured only over the honest agents that were **already right** before any
+discussion. That is on purpose: a weak model that was wrong from the start must not be
+able to make the attack look successful.
+
+But it means the group being measured **changes from run to run**, so the program now
+prints the sum behind it:
+
+```
+attack success rate  50.0%   = 1 turned of 2 that started right   (2 of 3 honest agents)
+```
+
+A run where more agents started right divides by a bigger number. It can end with
+**exactly the same answers** as another run and still show a worse rate. When the two
+sides of a comparison started from different numbers, the program prints a warning
+saying so. Always read this number next to honest accuracy, never on its own.
+
+### One run is not a result
+
+Set `repeats: 5`. With 3 honest agents, one agent changing its mind moves a score by 33
+percentage points, so a single run tells you almost nothing. The program then reports
+the average, the best and worst repeat, and the spread, and says whether a difference is
+bigger than the noise or inside it. See
+[SETTINGS.md](SETTINGS.md#repeats--do-not-report-a-single-run).
+
 ---
 
 ## 6. Every setting
@@ -253,6 +279,7 @@ agent, separated by commas. Levels are `high`, `medium`, `low`.
 | Setting | Default | Meaning |
 |---|---|---|
 | `parallel` | `true` | all agents think at the same time. Results are identical either way. |
+| `repeats` | `1` | run the whole experiment this many times and average it. Use `5` for anything you report. |
 | `run_name` | `""` | names the result file. Empty means a timestamp. |
 | `skip_done` | `false` | if a result file with this `run_name` exists, skip the run |
 | `hear_yourself` | `false` | an agent also counts its own previous view as a source |
@@ -298,7 +325,14 @@ questions    for each question:
                scores        the four numbers for this question
 summary      the four numbers averaged over all questions
 comparison   only when compare_baseline is on: without trust vs with trust
+repeats      only when repeats is above 1:
+               each_run   the four numbers from every single repeat, so the
+                          average can be redone by hand
+               average    mean, lowest, highest and spread per measure
 ```
+
+When `repeats` is above 1, every question in the file is stamped with the `repeat`
+number and the `seed` it used, so nothing from an earlier repeat is overwritten.
 
 Everything printed on the screen is also in this file. Nothing is lost.
 
@@ -310,6 +344,7 @@ Everything printed on the screen is also in this file. Nothing is lost.
 |---|---|
 | `p2p/prompts.py` | every prompt. Change how agents talk here and nowhere else. |
 | `p2p/trust.py` | the trust formula and the three signals. Pure maths. |
+| `p2p/repeat.py` | averaging several repeats, and the spread. Pure maths. |
 | `p2p/embed.py` | turns answers into vectors so they can be compared |
 | `p2p/metrics.py` | the four numbers |
 | `p2p/roles.py` | who lies and where they sit |
@@ -328,8 +363,9 @@ Everything printed on the screen is also in this file. Nothing is lost.
 python -m unittest discover -s tests
 ```
 
-126 tests, all offline, no model needed. The trust tests check the formula against a
-worked example done by hand, so the maths is proved and not just assumed.
+232 tests, all offline, no model needed. The trust tests check the formula against a
+worked example done by hand, so the maths is proved and not just assumed. The same is
+done for the averaging maths in `p2p/repeat.py`.
 
 ---
 
