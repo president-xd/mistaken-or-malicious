@@ -26,8 +26,31 @@ questions:
 # max_questions: 10                          # use only the first few
 
 # ---------------------------------------------------------------- MODEL
-model: "llama3.1:8b-instruct-q8_0"   # 8B - steady enough for real results
-embed_model: "nomic-embed-text"   # only used when scoring is "text"
+provider: "ollama"          # "ollama"   = a model on this machine. Free and
+                            #              offline, but slower, and the weaker
+                            #              models cannot do every job.
+                            # "deepseek" = the DeepSeek API. Costs money and
+                            #              needs a key, but it is far more
+                            #              capable and answers several calls at
+                            #              once (measured 4 times faster).
+                            # Override without editing this file:
+                            #   python -m p2p config.yaml --provider deepseek
+                            #
+                            # THE KEY DOES NOT GO IN THIS FILE. This folder is a
+                            # git repository, so a key written here would be
+                            # committed. Put it in the environment instead:
+                            #   PowerShell  $env:DEEPSEEK_API_KEY = "sk-..."
+                            #   cmd         set DEEPSEEK_API_KEY=sk-...
+                            #   Git Bash    export DEEPSEEK_API_KEY=sk-...
+
+model: "llama3.1:8b-instruct-q8_0"   # must match the provider above.
+                            # ollama:   llama3.1:8b-instruct-q8_0
+                            # deepseek: deepseek-v4-pro (capable)
+                            #           deepseek-v4-flash (cheaper, weaker)
+
+embed_model: "nomic-embed-text"   # only used when scoring is "text".
+                            # Always runs locally on Ollama, whichever provider
+                            # answers the questions.
 
 # ---------------------------------------------------------------- NETWORK
 agents: 4                   # how many agents in total (at least 2)
@@ -109,6 +132,16 @@ parallel: true              # true = all agents think at the same time.
                             # default it handles few requests at once. To get
                             # the full benefit set OLLAMA_NUM_PARALLEL=4 (or
                             # higher) before starting Ollama.
+repeats: 1                  # how many times to run the WHOLE experiment.
+                            # 1 is fine while you are trying things out, but a
+                            # single run is NOT a result: with 3 honest agents,
+                            # one agent changing its mind moves a score by 33
+                            # percentage points. Set this to 5 for anything you
+                            # report. Each repeat uses its own seed, and you get
+                            # the average, the best and worst repeat, and the
+                            # spread. With compare_baseline on, both halves of a
+                            # repeat share that repeat's seed, so they stay
+                            # comparable with each other.
 run_name: ""                # a name for this run. The result file is named
                             # after it. Leave empty for a timestamp.
 skip_done: false            # true = if a result file with this run_name already
