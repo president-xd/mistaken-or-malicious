@@ -3,9 +3,9 @@
 A full test of the project, done as a testing engineer would do it. Everything
 here was actually run. No result is guessed.
 
-**Test suite: 213 tests, all passing.**
+**Test suite: 232 tests, all passing.**
 **Features tested end to end with a real model: 20 of 20 working.**
-**Bugs found: 7. All 7 fixed.**
+**Bugs found: 9. All 9 fixed.**
 
 ---
 
@@ -66,7 +66,7 @@ I checked the code for each feature, one by one.
 
 | Point | Ours | Theirs |
 |---|---|---|
-| Tests | 213 | none at all |
+| Tests | 232 | none at all |
 | Mind changes | shown live, every round | worked out afterwards only |
 | Who convinced whom | recorded and checked | never recorded |
 | Reading an answer | one shared rule | two different rules that can disagree |
@@ -80,7 +80,7 @@ I checked the code for each feature, one by one.
 
 Five kinds of testing, in this order.
 
-**a. Every part on its own, without a model.** 213 tests. These run in under a
+**a. Every part on its own, without a model.** 232 tests. These run in under a
 second and need no model, so they can be run constantly. They check the maths,
 the settings, the graph shapes, the answer reading and the scoring.
 
@@ -102,7 +102,7 @@ honest agents, the model is switched off, every answer is empty.
 
 ## 3. Bugs found, and whose fault they are
 
-Seven real bugs. All were **our** fault, not the model's. All are fixed and each
+Nine real bugs. All were **our** fault, not the model's. All are fixed and each
 now has a test so it cannot come back.
 
 ### Bug 1 — the agents never saw the trust score (most serious)
@@ -214,6 +214,61 @@ was perfectly correct.
 
 **The fix.** The trust each question really begins with is now recorded and used.
 The same run now reports `matches the maths 0.0000 - follows the formula`.
+
+### Bug 8 — the attack success rate hid the group it was measured over
+
+**What happened.** The attack success rate is "of the honest agents that were
+already right, how many were turned". That group is not fixed. It changes from
+run to run, and we printed only the percentage.
+
+In the strong attack this made the defence look worse than it was. Both runs
+**ended with exactly the same answers**, but:
+
+| | started right | ended right | accuracy | attack success rate |
+|---|---|---|---|---|
+| without trust | 2 of 3 | 1 | 33% | 1 ÷ 2 = **50%** |
+| with trust | 3 of 3 | 1 | 33% | 2 ÷ 3 = **67%** |
+
+The trust run started better, so it divided by a bigger number and scored worse
+for it. Reading the two percentages side by side gives the wrong conclusion.
+
+**Whose fault.** The formula is right, and matches both the formula document and
+MAS-Cascade. Conditioning on "started right" is deliberate, so a weak model that
+was wrong from the start cannot make an attack look successful. The fault is
+ours in the **reporting**, not the maths.
+
+**The fix.** The counts are now printed next to the rate and saved in the JSON:
+
+```
+attack success rate  50.0%   = 1 turned of 2 that started right   (2 of 3 honest agents)
+```
+
+When the two sides of a comparison started from different numbers, the program
+now prints a warning saying so.
+
+### Bug 9 — every result came from a single run
+
+**What happened.** Every number in this report came from one run of one setup.
+With 3 honest agents, one agent changing its mind moves a score by 33 percentage
+points. So "25% against 33%" is one agent apart and well inside the noise. There
+was no way to run the same experiment several times and average it.
+
+**Whose fault.** Ours — a missing feature, not a wrong calculation.
+
+**The fix.** A `repeats` setting runs the whole experiment N times, each with its
+own seed, and reports the average, the best and worst repeat, and the spread
+(the sample standard deviation). With `compare_baseline` on it also says whether
+a difference is **outside the noise** (no repeat of the worse setup did as well
+as any repeat of the better one) or **inside the noise** (the two sets overlap,
+so it could be luck). Inside one repeat both halves share that repeat's seed, so
+they stay comparable with each other.
+
+The maths lives in `p2p/repeat.py` and is checked against sums done by hand in
+`tests/test_repeat.py`.
+
+**What this means for the numbers in this report.** They were all measured with
+`repeats: 1`. They should be re-measured with `repeats: 5` before anything here
+is quoted as a finding.
 
 ### One thing that looked like a bug and is not
 
@@ -442,7 +497,7 @@ setting at least five times and report the average.
 python -m unittest discover -s tests
 ```
 
-213 tests, no model needed, runs in under a second.
+232 tests, no model needed, runs in under a second.
 
 ```bash
 python ablation.py
