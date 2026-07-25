@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import asyncio
 import random
+from dataclasses import replace
 
 from . import logging_utils as log
-from . import metrics, roles, schedule, topology, trust as trust_math
+from . import metrics, providers, repeat, roles, schedule, topology, trust as trust_math
 from .agent import PeerAgent, agent_names, belief_shift, make_model_client
 from .config import Config
 from .embed import make_embedder
@@ -370,21 +371,84 @@ class Network:
 
 async def run_network(cfg: Config, recorder=None) -> None:
     """Run everything the config asks for."""
-    random.seed(cfg.seed)
-    client = make_model_client(cfg.model)
+    # Fail now if the provider cannot work at all, rather than half a run in.
+    providers.check_ready(cfg.provider)
+    client = make_model_client(cfg.model, cfg.provider)
     try:
-        if cfg.compare_baseline:
-            await _compare(cfg, client, recorder)
-        elif cfg.network_vs_network:
-            await _network_vs_network(cfg, client, recorder)
+        if cfg.repeats > 1:
+            await _repeat(cfg, client, recorder)
         else:
-            net = Network(cfg, client)
-            log.session(cfg, net.names, net.liars, net.adjacency, net.use_trust)
-            await _run_all(net, cfg, recorder)
-            if recorder:
-                recorder.set_summary(metrics.average_runs(net.rows))
+            random.seed(cfg.seed)
+            await _once(cfg, client, recorder)
     finally:
         await client.close()
+
+
+async def _once(cfg: Config, client, recorder):
+    """Run the chosen experiment exactly once.
+
+    Gives back the two summaries as (left, right). `left` is None for a plain
+    run, because there is nothing to compare against. In a comparison, `left`
+    is the setup we are testing against and `right` is the new one.
+    """
+    if cfg.compare_baseline:
+        return await _compare(cfg, client, recorder)
+    if cfg.network_vs_network:
+        return await _network_vs_network(cfg, client, recorder)
+
+    net = Network(cfg, client)
+    log.session(cfg, net.names, net.liars, net.adjacency, net.use_trust)
+    await _run_all(net, cfg, recorder)
+    summary = metrics.average_runs(net.rows)
+    if recorder:
+        recorder.set_summary(summary)
+    return None, summary
+
+
+async def _repeat(cfg: Config, client, recorder):
+    """Run the WHOLE experiment several times and report the average.
+
+    Each repeat gets its own seed, so the liars sit in different seats and the
+    model is asked afresh. One run of one setup is luck; the average over
+    several runs, with the spread shown next to it, is a result.
+
+    Inside one repeat both halves of a comparison share that repeat's seed, so
+    they are still tested under exactly the same conditions as each other.
+    """
+    log.banner(f"REPEATING THE WHOLE EXPERIMENT {cfg.repeats} TIMES\n"
+               f"One run is luck. The average over the repeats, and how far "
+               f"apart they were, is the result.")
+    lefts, rights = [], []
+
+    for i in range(cfg.repeats):
+        seed = cfg.seed + i
+        this_run = replace(cfg, seed=seed)
+        random.seed(seed)
+        log.repeat_header(i + 1, cfg.repeats, seed)
+        if recorder:
+            recorder.start_repeat(i + 1, seed)
+        left, right = await _once(this_run, client, recorder)
+        if left is not None:
+            lefts.append(left)
+        rights.append(right)
+
+    combined_right = repeat.combine(rights)
+    if lefts:
+        combined_left = repeat.combine(lefts)
+        left_name = "honest network" if cfg.network_vs_network else "without trust"
+        right_name = "all-liar network" if cfg.network_vs_network else "with trust"
+        log.repeats_comparison(combined_left, combined_right, cfg.repeats,
+                               left=left_name, right=right_name)
+    else:
+        log.repeats_table(combined_right, f"AVERAGE OVER {cfg.repeats} REPEATS")
+
+    if recorder:
+        # The averaged numbers replace the last repeat's numbers as the
+        # headline, and every repeat is kept so nothing is lost.
+        recorder.set_summary(repeat.means_only(combined_right))
+        recorder.set_repeats(cfg.repeats, rights, combined_right,
+                            lefts or None,
+                            repeat.combine(lefts) if lefts else None)
 
 
 async def _run_all(net, cfg, recorder):
@@ -441,6 +505,7 @@ async def _compare(cfg, client, recorder):
     if recorder:
         recorder.set_summary(with_trust)
         recorder.set_comparison(without, with_trust)
+    return without, with_trust
 
 
 async def _network_vs_network(cfg, client, recorder):
@@ -458,6 +523,8 @@ async def _network_vs_network(cfg, client, recorder):
     log.session(cfg, liars.names, liars.liars, liars.adjacency, liars.use_trust)
     await _run_all(liars, cfg, recorder)
 
-    log.comparison(metrics.average_runs(honest.rows),
-                   metrics.average_runs(liars.rows),
-                   left="honest network", right="all-liar network")
+    good, bad = metrics.average_runs(honest.rows), metrics.average_runs(liars.rows)
+    log.comparison(good, bad, left="honest network", right="all-liar network")
+    if recorder:
+        recorder.set_summary(bad)
+    return good, bad
