@@ -14,7 +14,7 @@ weight of one third on each does NOT give each signal an equal say.
 `network.update_trust` sharpens `agree` and `anomaly` but not `consist`. These
 tests record what that does to the balance.
 
-This matters for a conclusion already in TEST_REPORT.md. The ablation found
+This matters for a conclusion recorded in README.md. The ablation found
 that `consist` contributes nothing. Part of that may not be about consistency
 being a weak idea at all - it may be that our code hands it a much smaller
 range to work in.

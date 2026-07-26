@@ -4,7 +4,8 @@ These tests do not check for bugs. They record, in code, the real limits of the
 method, measured with agents whose answers we control exactly. If someone later
 changes the formula, these tests will show whether the limits moved.
 
-Every case here was found by testing and is explained in TEST_REPORT.md.
+Every case here was found by testing. The reasoning is in README.md, under
+"Things worth knowing".
 
 Run:  python -m unittest discover -s tests
 """

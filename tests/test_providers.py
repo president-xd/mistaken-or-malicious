@@ -115,6 +115,15 @@ class TestTheKeyIsCheckedBeforeTheRun(unittest.TestCase):
     question is already on screen, which looks like a bug in the network.
     """
 
+    # Both the environment AND the .env file have to be blanked out. Clearing
+    # only the environment made these two tests pass or fail depending on
+    # whether the developer happened to have a .env file on disk.
+    def setUp(self):
+        self.no_env_file = mock.patch.object(providers, "read_env_file",
+                                             lambda *a: {})
+        self.no_env_file.start()
+        self.addCleanup(self.no_env_file.stop)
+
     def test_no_key_stops_with_instructions(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(SystemExit) as caught:
@@ -136,6 +145,92 @@ class TestTheKeyIsCheckedBeforeTheRun(unittest.TestCase):
     def test_ollama_needs_no_key(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             providers.check_ready("ollama")   # must not raise
+
+
+class TestReadingTheEnvFile(unittest.TestCase):
+    """`.env.example` tells people to put the key in a `.env` file, so that
+    file has to actually be read. It is twelve lines of parsing rather than a
+    new package, so these tests cover the shapes people really write."""
+
+    def write_env(self, text):
+        handle = tempfile.NamedTemporaryFile("w", suffix=".env", delete=False,
+                                             encoding="utf-8")
+        handle.write(text)
+        handle.close()
+        self.addCleanup(os.unlink, handle.name)
+        return handle.name
+
+    def test_plain_line(self):
+        path = self.write_env("DEEPSEEK_API_KEY=sk-abc123\n")
+        self.assertEqual(providers.read_env_file(path),
+                         {"DEEPSEEK_API_KEY": "sk-abc123"})
+
+    def test_blank_lines_and_comments_are_skipped(self):
+        path = self.write_env("# my key\n\nDEEPSEEK_API_KEY=sk-abc\n\n")
+        self.assertEqual(providers.read_env_file(path),
+                         {"DEEPSEEK_API_KEY": "sk-abc"})
+
+    def test_quotes_are_stripped(self):
+        """People add quotes out of habit; a real key has none."""
+        path = self.write_env('DEEPSEEK_API_KEY="sk-abc"\n')
+        self.assertEqual(providers.read_env_file(path)["DEEPSEEK_API_KEY"],
+                         "sk-abc")
+
+    def test_spaces_around_the_equals_are_ignored(self):
+        path = self.write_env("DEEPSEEK_API_KEY = sk-abc \n")
+        self.assertEqual(providers.read_env_file(path)["DEEPSEEK_API_KEY"],
+                         "sk-abc")
+
+    def test_a_line_with_no_equals_does_not_crash(self):
+        """A stray note in the file must not stop a run."""
+        path = self.write_env("just a note\nDEEPSEEK_API_KEY=sk-abc\n")
+        self.assertEqual(providers.read_env_file(path)["DEEPSEEK_API_KEY"],
+                         "sk-abc")
+
+    def test_a_missing_file_is_not_an_error(self):
+        self.assertEqual(providers.read_env_file("no_such_file.env"), {})
+
+    def test_no_trailing_newline_still_reads(self):
+        """.env.example has no newline at the end of its only line."""
+        path = self.write_env("DEEPSEEK_API_KEY=sk-abc")
+        self.assertEqual(providers.read_env_file(path)["DEEPSEEK_API_KEY"],
+                         "sk-abc")
+
+
+class TestWhichKeyWins(unittest.TestCase):
+    """The shell must beat the file. Otherwise a stale .env quietly overrides
+    the key you just exported, and you debug the wrong one."""
+
+    def test_the_environment_beats_the_file(self):
+        with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-from-shell"}), \
+             mock.patch.object(providers, "read_env_file",
+                               lambda *a: {"DEEPSEEK_API_KEY": "sk-from-file"}):
+            self.assertEqual(providers.deepseek_key(), "sk-from-shell")
+
+    def test_the_file_is_used_when_the_shell_has_nothing(self):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             mock.patch.object(providers, "read_env_file",
+                               lambda *a: {"DEEPSEEK_API_KEY": "sk-from-file"}):
+            self.assertEqual(providers.deepseek_key(), "sk-from-file")
+
+    def test_the_example_placeholder_is_refused(self):
+        """Catching this here saves a confusing 401 from the API."""
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             mock.patch.object(
+                 providers, "read_env_file",
+                 lambda *a: {"DEEPSEEK_API_KEY": "YOUR_API_KEY_GOES_HERE"}):
+            with self.assertRaises(SystemExit) as caught:
+                providers.deepseek_key()
+        self.assertIn("example value", str(caught.exception))
+
+    def test_the_error_names_both_places_to_put_it(self):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             mock.patch.object(providers, "read_env_file", lambda *a: {}):
+            with self.assertRaises(SystemExit) as caught:
+                providers.deepseek_key()
+        message = str(caught.exception)
+        self.assertIn(".env", message)
+        self.assertIn("export", message)
 
 
 class TestNoKeyEverReachesDisk(unittest.TestCase):
