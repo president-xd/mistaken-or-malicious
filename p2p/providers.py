@@ -134,19 +134,37 @@ def deepseek_key() -> str:
     return key
 
 
-def make_client(provider: str, model: str):
-    """Build the model client for one provider."""
+def make_client(provider: str, model: str, seed: int | None = None):
+    """Build the model client for one provider.
+
+    `seed` makes the model itself repeatable. Without it the same question can
+    get a different answer every time, so no run can be reproduced - which was
+    true of this project until now, even though the config had a `seed`
+    setting. That setting only ever chose which agent was the liar.
+
+    Measured on qwen2.5:14b, asking for an invented name three times:
+        no seed   'Stardust Whisperer', 'Zephyrion', 'Zephyrion'
+        seed 42   'WhisperWings', 'WhisperWings', 'WhisperWings'
+        seed 99   'Whisperwraith'      (a different seed gives a different run)
+    """
     if provider == "deepseek":
+        # The OpenAI-shaped API takes a seed, but treats it as best effort:
+        # the same seed usually gives the same answer and is not promised to.
+        # Ollama's seed is exact.
+        extra = {"seed": seed} if seed is not None else {}
         return OpenAIChatCompletionClient(
             model=model,
             base_url=DEEPSEEK_URL,
             api_key=deepseek_key(),
             model_info=_PLAIN_TEXT,
+            **extra,
         )
     if provider == "ollama":
         # Ollama models are not in AutoGen's built-in list, so we have to say
         # what they can do.
-        return OllamaChatCompletionClient(model=model, model_info=_PLAIN_TEXT)
+        options = {"seed": seed} if seed is not None else {}
+        return OllamaChatCompletionClient(model=model, model_info=_PLAIN_TEXT,
+                                          options=options)
     raise SystemExit(f"unknown provider '{provider}'. "
                      f"choose one of: {', '.join(PROVIDERS)}")
 
