@@ -432,8 +432,9 @@ def _empty_experiment_note(without, with_trust) -> None:
           "and both")
     print("    come from the trust table rather than from anything an agent "
           "decided.")
-    print("    Fix: screen the questions against THIS model first - see "
-          "dynamic-tests/persuadability.py")
+    print("    Fix: screen the questions against THIS model first. See "
+          "'Check your")
+    print("    questions before you trust a result' in README.md.")
 
 
 def _denominator_note(without, with_trust, left, right, width=16) -> None:
