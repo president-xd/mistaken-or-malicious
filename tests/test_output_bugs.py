@@ -226,7 +226,55 @@ class TestLiarRefusalIsDetected(unittest.TestCase):
         self.assertEqual(net.liar_refused, set())
 
 
-# ------------------------------------------------- 5. the seed reaching the model
+# ------------------------------- 5. influence counting peers nobody listens to
+
+class TestTrustFloorSilencesProperly(unittest.TestCase):
+    """SYMPTOM: with trust_floor on, an agent printed `listens to: nobody` and
+    the very next line credited its peers with a share of its attention.
+
+    CAUSE: the floor decided who was HEARD, but influence and the metrics were
+    computed from the whole trust table. A peer that had been shut out still
+    counted toward `attacker_influence`, one of the four headline measures, so
+    the defence looked weaker than it was.
+    """
+
+    def build(self, floor):
+        agents = {"Agent_A": Scripted("Agent_A", ["yes"] * 3),
+                  "Agent_B": Scripted("Agent_B", ["no"] * 3),
+                  "Agent_C": Scripted("Agent_C", ["yes"] * 3)}
+        net, _ = run_network(agents, trust_floor=floor, attackers=1)
+        net.liars = ["Agent_B"]
+        return net
+
+    def test_a_silenced_peer_gets_no_share_of_the_attention(self):
+        net = self.build(0.45)
+        self.assertNotIn("Agent_B", net.heard_by("Agent_A"))
+        self.assertNotIn("Agent_B", net.influence()["Agent_A"])
+
+    def test_the_shares_still_add_up_to_one(self):
+        net = self.build(0.45)
+        for listener, row in net.influence().items():
+            if row:
+                self.assertAlmostEqual(sum(row.values()), 1.0, places=9)
+
+    def test_the_default_floor_changes_nothing(self):
+        """trust_floor is 0 by default, so ordinary runs must be untouched."""
+        net = self.build(0.0)
+        self.assertEqual(set(net.influence()["Agent_A"]),
+                         set(net.trust["Agent_A"]))
+
+    def test_heard_trust_is_the_full_table_when_the_floor_is_off(self):
+        net = self.build(0.0)
+        self.assertEqual(net.heard_trust(), net.trust)
+
+    def test_everyone_silenced_leaves_no_shares_rather_than_crashing(self):
+        net = self.build(0.99)
+        for listener in net.names:
+            self.assertEqual(net.heard_by(listener), [])
+            self.assertEqual(net.influence()[listener], {})
+
+
+# ------------------------------------------------- 6. the seed reaching the model
 
 class TestSeedReachesTheModel(unittest.TestCase):
     """SYMPTOM: two runs with the same config and the same seed gave different
