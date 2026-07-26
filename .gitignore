@@ -1,3 +1,5 @@
 INSTRUCTIONS.md
 .env
-commit.sh
+commit.sh
+__pycache__/
+*.pyc
