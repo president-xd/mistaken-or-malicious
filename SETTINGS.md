@@ -30,8 +30,8 @@ Written in plain English. If you only read one thing, read
 
 ## Recommended settings
 
-Copy this if you are not sure. Every value here is backed by a measurement in
-`TEST_REPORT.md`.
+Copy this if you are not sure. Every value here is backed by a measurement,
+and the reason for each is given further down this file.
 
 ```yaml
 provider: "deepseek"                 # or "ollama" to stay offline
@@ -89,12 +89,6 @@ Send reasoning between agents, not just answers:
 
 ```bash
 python -m p2p config.yaml --share both
-```
-
-Run the ablation study (which signals actually matter):
-
-```bash
-python ablation.py
 ```
 
 Run the tests:
@@ -212,11 +206,8 @@ than one try.
 | llama3.2:1b | 5/6 | 6/6 | 3/3 | 0/2 | 1.0 |
 | deepseek-v4-pro (API) | 12/12 | 12/12 | 3/3 | 3/3 | 2.4 |
 
-Re-run it on your machine:
-
-```bash
-python dynamic-tests/screen_models.py
-```
+Measured once on this machine and recorded here. The script that produced the
+table is no longer kept in the repository.
 
 **Use `qwen2.5:14b`.** It is the only local model that does every job. Use
 `llama3:latest` when you want speed and do not need the confidence number.
@@ -587,15 +578,14 @@ not carry over. Measured on `deepseek-v4-pro`:
 | capital of Turkey | turned 1/3 | turned **0/3** |
 | capital of Switzerland | turned 1/3 | turned **0/3** |
 
-Screen your questions against the model you will actually use:
+Screen your questions against the model you will actually use. The measurement
+is simple enough to do by hand: give one honest agent the correct answer, have
+three peers all push the wrong one, and count how often the honest agent gives
+in. Three tries per question is enough to see the pattern. Keep whatever can be
+argued about; drop the rest.
 
-```bash
-python dynamic-tests/persuadability.py --model deepseek-v4-pro
-```
-
-It runs the same measurement: one honest agent holds the right answer, three
-peers push the wrong one, repeated several times. Keep whatever can be argued
-about; drop the rest.
+A question the model will not budge on cannot be attacked, so it cannot test
+anything.
 
 The program also warns you now. When no honest agent was turned in either half,
 the comparison prints `Careful: this experiment measured nothing on the first
