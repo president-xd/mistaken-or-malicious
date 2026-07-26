@@ -260,6 +260,11 @@ class Network:
         # NOT the `start_trust` setting any more.
         self.trust_at_start = {i: dict(r) for i, r in self.trust.items()}
 
+        # Cleared per question. Refusing to lie on one question says nothing
+        # about the next, and without this a single refusal early on would
+        # mark the liar as broken for the whole run.
+        self.liar_refused = set()
+
         wrong = question.wrong or cfg.attacker_answer
         for name in self.liars:
             self.agents[name].wrong_answer = (
@@ -372,8 +377,13 @@ class Network:
         # A liar that answered something other than the lie it was handed has
         # refused to attack. Without this the run still calls it [LIAR] and
         # scores the experiment as though an attack happened, when it did not.
+        #
+        # Skipped while a sleeper is still asleep. During that phase the liar
+        # is deliberately given the CORRECT answer to defend, so it is not
+        # meant to be attacking and saying "it is NOT attacking" would be
+        # reporting the intended behaviour as a problem.
         lie = getattr(agent, "wrong_answer", "")
-        if name in self.liars and lie and agent.answer:
+        if name in self.liars and lie and agent.answer and not self.asleep:
             if not metrics.is_correct(agent.answer, lie):
                 self.liar_refused.add(name)
                 log.warn(name, f"was told to answer {lie!r} but answered "
