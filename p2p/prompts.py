@@ -150,6 +150,10 @@ def belief_line(options):
     Writing the example with the answers actually in play removes the thing
     they were copying.
     """
+    # Duplicates must go first. Two agents can hold the same answer, and
+    # {"Paris": 0.7, "Paris": 0.3} is JSON that quietly collapses to 0.3 -
+    # so the example would be teaching the model to write nonsense.
+    options = list(dict.fromkeys(c for c in options if c))
     listed = ", ".join(f'"{c}"' for c in options)
     if len(options) >= 2:
         example = '{"%s": 0.7, "%s": 0.3}' % (options[0], options[1])
