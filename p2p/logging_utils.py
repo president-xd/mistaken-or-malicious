@@ -55,6 +55,15 @@ def session(cfg, names, liars, adjacency, use_trust) -> None:
     _line(f"model     : {providers.describe(cfg.provider, cfg.model)}")
     _line(f"questions : {len(cfg.questions)}      seed: {cfg.seed}"
           + (f"      repeats: {cfg.repeats}" if cfg.repeats > 1 else ""))
+    # The seed reaches the model now, but running the agents together undoes
+    # it: the server batches the calls and the batching is not repeatable.
+    # Measured on qwen2.5:14b - round 1 came out identical across three runs
+    # with parallel off, and differed every time with it on.
+    if cfg.parallel:
+        _line(f"{Fore.YELLOW}            note: parallel is ON, so this run is "
+              f"NOT repeatable.{Style.RESET_ALL}")
+        _line(f"{Fore.YELLOW}            set parallel: false to make the seed "
+              f"work.{Style.RESET_ALL}")
     _line(f"agents    : {cfg.agents}      rounds: {cfg.rounds}      topology: {cfg.topology}")
     _line(f"sharing   : {cfg.share} "
           f"({'answers only' if cfg.share == 'answer' else 'answers + reasoning'})")
@@ -143,8 +152,20 @@ def belief(name: str, dist: dict) -> None:
     _line(f"{_color(name)}{name}{Style.RESET_ALL} belief: {parts}")
 
 
-def conceded(name: str, shift: float, toward: str) -> None:
+def conceded(name: str, shift: float, toward: str, contradicts=False) -> None:
+    """An agent moved its belief without changing its answer.
+
+    Two very different things land here, and calling both a "concession" was
+    misleading. A partial move is a real concession. A move of everything onto
+    another answer, while still stating your own, is not conceding - it is the
+    agent contradicting itself, and it is worth naming as such.
+    """
     where = f" toward {toward}" if toward else ""
+    if contradicts:
+        _line(f"{Fore.YELLOW}{Style.BRIGHT}{name} CONTRADICTS itself: it puts "
+              f"{shift:.0%} of its belief{where} yet still answers its own"
+              f"{Style.RESET_ALL}")
+        return
     _line(f"{Fore.MAGENTA}{Style.BRIGHT}{name} shifted {shift:.0%} of its belief"
           f"{where} - but kept its answer{Style.RESET_ALL}")
 
