@@ -11,7 +11,7 @@ import textwrap
 
 from colorama import Fore, Style, init as _init
 
-from . import providers
+from . import providers, roles
 from .agent import _norm
 from .trust import half_life
 
@@ -76,6 +76,13 @@ def session(cfg, names, liars, adjacency, use_trust) -> None:
         # answer to name here. Saying so beats printing an empty line.
         defends = cfg.attacker_answer or "the 'wrong:' answer set on each question"
         _line(f"{Fore.RED}            they defend: {defends}{Style.RESET_ALL}")
+        # A seat setting that could not be used means you are running a
+        # different experiment from the one you asked for, and the numbers
+        # still look fine, so it has to be said out loud.
+        for problem in roles.check_places(names, cfg.attackers,
+                                          cfg.attacker_places):
+            _line(f"{Fore.YELLOW}{Style.BRIGHT}            CAREFUL: {problem}"
+                  f"{Style.RESET_ALL}")
     else:
         _line("liars     : none - every agent is honest")
 
