@@ -258,7 +258,7 @@ ollama model name is never sent to the API by mistake.
 | `rounds` | `2` | round 1 is alone, the rest are discussion |
 | `topology` | `mesh` | who can hear whom (see below) |
 | `share` | `answer` | `answer` = send the answer only, `both` = send reasoning too |
-| `seed` | `1` | the same seed gives the same run again |
+| `seed` | `1` | chooses which agents lie, and seeds the model. See the note below |
 
 ### Liars
 
@@ -526,6 +526,27 @@ Recorded in `tests/test_locality.py`.
 **The trust table is really a list.** Every agent ends up with the same opinion of any
 given agent. The formula's score carries only one subscript, so this is forced by the
 maths, not by the code. Do not describe it as each agent forming its own private view.
+
+**`seed` does not fully repeat a run, and it never used to do anything at all.**
+Until now the seed only chose which agent was the liar - it was never passed to the
+model, so two runs with the same config gave different answers. It is passed now, and
+each agent gets its own seed (`seed`, `seed + 1`, ...) so they stay independent instead
+of all producing the same reply.
+
+What that buys you, measured on `qwen2.5:14b`:
+
+| | round 1 repeats? | later rounds? |
+|---|---|---|
+| `parallel: false` | **yes**, identical across 3 runs | no, still drifts |
+| `parallel: true` | no | no |
+
+Running the agents together undoes the seed, because the server batches the calls and
+the batching is not repeatable. **Set `parallel: false` when you need a run you can
+repeat.** The program now prints a warning when `parallel` is on.
+
+Later rounds still drift even when serial. The context is longer by then, and small
+floating-point differences on the GPU are enough to change a word. Full end-to-end
+reproducibility is **not** available, and this project should not claim it.
 
 **`parallel: true` only helps a little by itself.** The code sends all the agents'
 questions at once, but Ollama answers only a few at a time by default. We measured 30
