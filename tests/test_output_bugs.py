@@ -16,6 +16,7 @@ from p2p.agent import (PeerAgent, make_clients, normalize_belief, parse_belief,
 from p2p.config import Config, Question
 from p2p.network import Network
 from p2p.prompts import belief_line, reconsider
+from p2p.roles import check_places, choose_seats
 from p2p.trust import NEUTRAL, consist_score, stretch_exact
 
 
@@ -274,7 +275,101 @@ class TestTrustFloorSilencesProperly(unittest.TestCase):
             self.assertEqual(net.influence()[listener], {})
 
 
-# ------------------------------------------------- 6. the seed reaching the model
+# ------------------------------------- 6. seat settings that quietly do nothing
+
+class TestBadSeatSettingsAreReported(unittest.TestCase):
+    """SYMPTOM: none. That is the problem.
+
+    Asking for 2 attackers at seats "1,1" gives ONE liar. Asking for seat 99
+    in a 3-agent network gives a RANDOM seat. Both run happily and produce
+    numbers that look fine, so you never learn you measured something else.
+    """
+
+    NAMES = ["Agent_A", "Agent_B", "Agent_C"]
+
+    def problems(self, count, places):
+        return check_places(self.NAMES, count, places)
+
+    def test_a_repeated_seat_loses_a_liar(self):
+        found = " ".join(self.problems(2, "1,1"))
+        self.assertIn("more than once", found)
+        self.assertEqual(len(choose_seats(self.NAMES, 2, "1,1", "mesh", 1)), 1)
+
+    def test_a_seat_that_does_not_exist_is_named(self):
+        found = " ".join(self.problems(1, "99"))
+        self.assertIn("does not exist", found)
+        self.assertIn("RANDOM", found)
+
+    def test_a_seat_that_is_not_a_number_is_named(self):
+        self.assertIn("not a whole number", " ".join(self.problems(1, "-1")))
+
+    def test_a_misspelled_keyword_is_caught(self):
+        """'centre' is not 'center', and silently became random."""
+        found = " ".join(self.problems(1, "centre"))
+        self.assertIn("not understood", found)
+        self.assertIn("RANDOM", found)
+
+    def test_the_count_disagreeing_with_the_list_is_named(self):
+        self.assertIn("seat list wins", " ".join(self.problems(2, "0")))
+
+    def test_good_settings_produce_no_noise(self):
+        for count, places in ((2, "0,2"), (1, "0"), (1, "random"),
+                              (1, "center"), (1, "leaf"), (0, "0,1")):
+            self.assertEqual(self.problems(count, places), [],
+                             f"{places!r} should be silent")
+
+
+# ------------------------------------- 7. warnings that fire at the wrong time
+
+class TestLiarRefusalWarningIsScoped(unittest.TestCase):
+    """Two ways the refusal warning could cry wolf."""
+
+    def test_it_is_cleared_between_questions(self):
+        """Refusing on question 1 says nothing about question 2. Without this
+        one refusal marked the liar as broken for the rest of the run."""
+        agents = {"A": Scripted("A", ["yes"] * 3),
+                  "B": Scripted("B", ["yes"] * 3),
+                  "C": Scripted("C", ["yes"] * 3)}
+        net, _ = run_network(agents, attackers=1,
+                             questions=[Question("Q", "yes", "no")])
+
+        # A refusal recorded on an earlier question must not survive into the
+        # next one. "Ghost" is not a liar here, so nothing can put it back -
+        # if it is still there afterwards, the set was never cleared.
+        net.liar_refused.add("Ghost")
+        with contextlib.redirect_stdout(io.StringIO()):
+            asyncio.run(net.run_question(net.cfg.questions[0]))
+        self.assertNotIn("Ghost", net.liar_refused)
+
+    def test_a_liar_that_will_not_lie_is_still_recorded(self):
+        agents = {"A": Scripted("A", ["yes"] * 3),
+                  "B": Scripted("B", ["yes"] * 3),
+                  "C": Scripted("C", ["yes"] * 3)}
+        net, _ = run_network(agents, attackers=1,
+                             questions=[Question("Q", "yes", "no")])
+        net.liars = ["A"]
+        # run_question sets wrong_answer from the question, so set it after.
+        net.agents["A"].wrong_answer = "no"
+        with contextlib.redirect_stdout(io.StringIO()):
+            net._report("A")
+        self.assertIn("A", net.liar_refused)
+
+    def test_a_sleeping_sleeper_is_not_called_a_refuser(self):
+        """While asleep the liar is GIVEN the correct answer to defend, so
+        answering correctly is the intended behaviour, not a refusal."""
+        agents = {"A": Scripted("A", ["yes"] * 3, wrong_answer="yes"),
+                  "B": Scripted("B", ["yes"] * 3),
+                  "C": Scripted("C", ["yes"] * 3)}
+        net, _ = run_network(agents, attackers=1)
+        net.liars, net.asleep = ["A"], True
+        agents["A"].answer = "no"        # deviating, but it is asleep
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            net._report("A")
+        self.assertNotIn("NOT attacking", buffer.getvalue())
+
+
+# ------------------------------------------------- 8. the seed reaching the model
 
 class TestSeedReachesTheModel(unittest.TestCase):
     """SYMPTOM: two runs with the same config and the same seed gave different
