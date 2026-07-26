@@ -364,13 +364,18 @@ agent, separated by commas. Levels are `high`, `medium`, `low`.
 With `--result json`, everything is saved to `results/run_<time>.json`.
 
 ```
-settings     every setting used for the run
+settings     every setting used for the run, read straight from the config
+             object - so a setting added later cannot go unrecorded
 agents       each agent and whether it was honest or a liar
 questions    for each question:
                rounds        what every agent answered each round,
                              its confidence, and its belief
                signals       agree, consist, anomaly and score per agent,
-                             so any trust value can be checked by hand
+                             so any trust value can be checked by hand.
+                             `score` is rounded to 4 places for reading;
+                             `exact` is the unrounded value the trust
+                             update actually used, so the maths can be
+                             reproduced exactly from this file
                trust         the full trust table that round
                influence     each agent's share of the attention
                scores        the four numbers for this question
