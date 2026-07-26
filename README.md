@@ -66,8 +66,19 @@ A local 8B model works but is slow and cannot do every job. The DeepSeek API is
 far more capable and answers several calls at once. Measured: **4 times faster**,
 because Ollama answers only a few calls at a time and DeepSeek does not.
 
-Put your key in the environment. **Never in a config file** — this is a git repo,
-so a key written into a tracked file gets committed:
+Your key goes in one of two places. **Never in `config.yaml`** — that file is
+committed to git.
+
+**Either** a `.env` file next to `config.yaml`, copied from `.env.example`:
+
+```bash
+cp .env.example .env
+```
+
+then edit it to hold your real key. `.env` is listed in `.gitignore`, so it is
+never committed.
+
+**Or** your shell environment:
 
 ```bash
 export DEEPSEEK_API_KEY=sk-...
@@ -75,6 +86,9 @@ export DEEPSEEK_API_KEY=sk-...
 
 On Windows PowerShell use `$env:DEEPSEEK_API_KEY = "sk-..."`, and on cmd
 `set DEEPSEEK_API_KEY=sk-...`.
+
+The shell wins when both are set, so a key you just exported is never silently
+overridden by a stale file.
 
 Then either set `provider: "deepseek"` in the config, or pass the flag:
 
@@ -398,9 +412,21 @@ Tools that are not part of the program, for checking a model before you trust it
 
 | File | What it does |
 |---|---|
-| `__deepseek.py` | screens the DeepSeek API on the four jobs the agents have to do |
+| `dynamic-tests/screen_models.py` | runs every model you have through the four jobs and says which are usable |
 | `dynamic-tests/persuadability.py` | measures whether your questions can be argued about on a given model |
 | `dynamic-tests/deep_test.py` | runs the real program across many setups and lists anything that looks like our bug |
+| `p2p/__deepseek.py` | the same four jobs against the DeepSeek API, over raw HTTP |
+
+```bash
+python dynamic-tests/screen_models.py
+```
+
+```bash
+python dynamic-tests/deep_test.py --quick
+```
+
+Use `--quick` with any local model. Without it a full campaign on a 14-billion
+model runs for most of a day.
 
 ---
 
@@ -487,3 +513,46 @@ Two things now guard against this:
 2. **The program now warns you.** When no honest agent was turned in either half, the
    comparison prints `Careful: this experiment measured nothing on the first two rows`
    and explains that only trust separation and attacker influence still mean anything.
+
+---
+
+## 13. Which model to use
+
+Every model on the machine, put through the four jobs the agents actually do,
+using the real agent and the real prompts. Counts, not percentages, because the
+samples are small — two models only differ meaningfully when the gap is bigger
+than one try.
+
+| model | right | format | defends a lie | graded belief | s/call |
+|---|---|---|---|---|---|
+| **qwen2.5:14b** | 6/6 | 6/6 | 2/3 | **2/2** | 12.8 |
+| deepseek-r1:14b | 6/6 | 6/6 | **0/3** | 2/2 | 78.1 |
+| mistral-nemo:12b | 6/6 | 6/6 | 3/3 | 0/2 | 7.8 |
+| llama3.1:8b-instruct-q8_0 | 6/6 | 6/6 | 3/3 | 0/2 | 18.6 |
+| llama3:latest | 6/6 | 6/6 | 3/3 | 0/2 | 7.4 |
+| llama3.2:1b | 5/6 | 6/6 | 3/3 | 0/2 | 1.0 |
+| deepseek-v4-pro (API) | 12/12 | 12/12 | 3/3 | 3/3 | 2.4 |
+
+Run it on your own machine:
+
+```bash
+python dynamic-tests/screen_models.py
+```
+
+**Use `qwen2.5:14b`.** It is the only local model that can do every job,
+including the graded belief that the confidence number depends on.
+
+**Use `llama3:latest`** if you want speed and do not need the confidence number.
+Same score on defending a lie, nearly twice as fast.
+
+**Never use `deepseek-r1:14b` for an attack experiment.** It refused to defend a
+wrong answer 3 times out of 3. A reasoning model reasons its way out of lying,
+so the liar never lies and no attack ever starts.
+
+**The format is solved.** All six models ended every reply with an ANSWER line,
+with no retries — including the reasoning model that writes long `<think>`
+blocks first. That came from the prompt work and the retry, not from a bigger
+model.
+
+**Graded belief needs 14 billion.** Every model below that scored 0/2; both 14B
+models scored 2/2.
