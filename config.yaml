@@ -48,8 +48,8 @@ model: "qwen2.5:14b"        # must match the provider above.
                             #           llama3.1:8b-instruct-q8_0 (faster)
                             # deepseek: deepseek-v4-pro (capable)
                             #           deepseek-v4-flash (cheaper, weaker)
-                            # Check any new model before trusting its numbers:
-                            #   python dynamic-tests/screen_models.py
+                            # Check any new model before trusting its numbers.
+                            # See "Which model to use" in README.md.
 
 embed_model: "nomic-embed-text"   # only used when scoring is "text".
                             # Always runs locally on Ollama, whichever provider
