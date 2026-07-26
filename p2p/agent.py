@@ -190,13 +190,33 @@ def agent_names(count: int) -> list[str]:
     return names
 
 
-def make_model_client(model: str, provider: str = "ollama"):
+def make_model_client(model: str, provider: str = "ollama",
+                      seed: int | None = None):
     """A client for whichever provider the config asked for.
 
     The choice itself lives in providers.py. This stays here only so older
     code that imported it keeps working.
     """
-    return providers.make_client(provider, model)
+    return providers.make_client(provider, model, seed)
+
+
+def make_clients(model: str, provider: str, seed: int | None, count: int):
+    """One client per agent, each with its OWN seed.
+
+    Every agent must be repeatable, but they must not all become the same
+    agent. A single shared seed would make every honest agent produce the
+    identical reply to the identical question, so the network would really
+    hold one opinion wearing several names, and `agree` would be measuring
+    nothing.
+
+    Giving agent i the seed `seed + i` keeps both properties: the run repeats
+    exactly, and the agents still think independently.
+
+    With no seed set, every client is unseeded and the run is not repeatable.
+    """
+    if seed is None:
+        return [providers.make_client(provider, model) for _ in range(count)]
+    return [providers.make_client(provider, model, seed + i) for i in range(count)]
 
 
 class PeerAgent:
@@ -205,6 +225,8 @@ class PeerAgent:
     # Class-level defaults so partially-built instances stay valid.
     _candidates: tuple = ()
     belief: dict = {}
+    belief_ignored: bool = False    # the BELIEF line could not be used
+    belief_disagrees: bool = False  # the belief contradicts the stated answer
 
     def __init__(self, name: str, client,
                  role: str = "honest", wrong_answer: str = "",
@@ -304,10 +326,13 @@ class PeerAgent:
         # so it can put weight on a peer's answer without adopting it outright.
         self._candidates = list(dict.fromkeys(
             [previous] + [a for a, _ in heard.values()]))
-        options = ", ".join(f'"{c}"' for c in self._candidates)
         write = prompts.reconsider_as_liar if self.lies else prompts.reconsider
         note = prompts.TRUST_NOTE if trust else ""
-        text = await self._ask(write(question, previous, peers, options, note))
+        # The LIST is passed, not a formatted string, so prompts.py can build
+        # the worked example out of the answers actually in play. A fixed
+        # example got copied verbatim and the belief was then discarded.
+        text = await self._ask(
+            write(question, previous, peers, self._candidates, note))
         self._absorb(text)
         # Compare normalized: "Yes" -> "yes." is NOT a change of mind.
         changed = _norm(self.answer) != _norm(previous)
@@ -338,5 +363,29 @@ class PeerAgent:
 
         # Belief always ends up valid: a missing or malformed BELIEF line simply
         # collapses to certainty in the stated answer, so it never fails a run.
-        self.belief = normalize_belief(
-            parse_belief(text), self._candidates, self.answer)
+        raw_belief = parse_belief(text)
+        self.belief = normalize_belief(raw_belief, self._candidates, self.answer)
+
+        # Two things that used to happen silently, and now get reported.
+        #
+        # 1. The model wrote a BELIEF line, but none of its keys matched a real
+        #    answer - usually because it copied the example. Everything it said
+        #    was thrown away and replaced with certainty in its own answer, so
+        #    the confidence number shown was ours, not the model's.
+        known = {_norm(c) for c in self._candidates} | {_norm(self.answer)}
+        self.belief_ignored = bool(raw_belief) and not any(
+            _norm(str(k)) in known for k in raw_belief)
+
+        # 2. The stated answer contradicts the stated belief: the agent says
+        #    one thing on its ANSWER line and puts its confidence on another.
+        #    Both were stored and never compared.
+        #
+        #    The bar is deliberately high. Leaning 55/45 the other way is a
+        #    real opinion about a close call, not a mistake, and flagging it
+        #    would bury the genuine case in noise. We only report it when the
+        #    agent has almost abandoned its own answer.
+        best = top_answer(self.belief)
+        self.belief_disagrees = bool(
+            best and self.answer and _norm(best) != _norm(self.answer)
+            and self.belief.get(best, 0.0) > 0.5
+            and self.belief.get(self.answer, 0.0) < 0.25)
