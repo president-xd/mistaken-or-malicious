@@ -52,9 +52,15 @@ weight_consist: 0.0
 weight_anomaly: 0.5
 
 warmup: 1
-parallel: true
+parallel: true                       # set false if you need to repeat a run
 repeats: 5                           # never report a single run
 ```
+
+**`parallel` and `seed` pull against each other.** Running the agents together
+is much faster, but it undoes the seed: the server batches the calls and the
+batching is not repeatable. Use `parallel: true` for speed, and
+`parallel: false` when you need a run somebody else can reproduce. The program
+prints a warning when `parallel` is on.
 
 Five things that matter most:
 
@@ -238,7 +244,7 @@ is the trap that silently turns a whole experiment into a null result.
 | `rounds` | 2 | **5** | Round 1 is alone. Trust needs about 3 more to move |
 | `topology` | `mesh` | `mesh` normally | See the table below |
 | `share` | `answer` | `answer` | `both` sends reasoning too, but a weak model copies bad reasoning |
-| `seed` | 1 | any number | Same seed gives the same run again |
+| `seed` | 1 | any number | Chooses who lies, and seeds the model. Only repeats a run with `parallel: false`, and only round 1 |
 
 ### Topologies
 
