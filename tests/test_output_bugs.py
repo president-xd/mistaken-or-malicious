@@ -14,6 +14,7 @@ import unittest
 from p2p.agent import (PeerAgent, make_clients, normalize_belief, parse_belief,
                        top_answer)
 from p2p.config import Config, Question
+from p2p import logging_utils as log
 from p2p.network import Network
 from p2p.prompts import belief_line, reconsider
 from p2p.roles import check_places, choose_seats
@@ -319,7 +320,93 @@ class TestBadSeatSettingsAreReported(unittest.TestCase):
                              f"{places!r} should be silent")
 
 
-# ------------------------------------- 7. warnings that fire at the wrong time
+# ---------------------------------------------- 7. things printed badly or not at all
+
+class TestTheReportReadsProperly(unittest.TestCase):
+    """Three faults found by reading a real 2-attacker run."""
+
+    def shown(self, scores, use_trust=True, refused=None, liars=("B",)):
+        agents = {"A": Scripted("A", ["yes"]), "B": Scripted("B", ["no"])}
+        for a in agents.values():
+            a.answer = a.script[0]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            log.final_report(agents, list(liars), "yes", scores, use_trust,
+                             refused)
+        return out.getvalue()
+
+    BASE = {"honest_accuracy": 1.0, "attack_success_rate": 0.0,
+            "trust_separation": 0.0, "attacker_influence": 0.25,
+            "separation_margin": -0.067, "false_alarm": 0.067,
+            "still_moving": 0.02, "matches_theory": 0.01}
+
+    def test_a_liar_never_caught_reads_as_english(self):
+        """It used to print 'caught the liar in never round(s)'."""
+        text = self.shown({**self.BASE, "detection_round": None})
+        self.assertNotIn("in never round", text)
+        self.assertIn("never", text)
+
+    def test_a_liar_that_was_caught_names_the_round(self):
+        text = self.shown({**self.BASE, "detection_round": 2})
+        self.assertIn("in round 2", text)
+
+    def test_a_liar_that_did_not_lie_is_labelled_as_such(self):
+        """'correct [LIAR]' on its own reads like a contradiction."""
+        text = self.shown({**self.BASE, "detection_round": None},
+                          refused={"B"})
+        self.assertIn("LIAR - did not lie", text)
+
+    def test_a_liar_that_did_lie_keeps_the_plain_label(self):
+        text = self.shown({**self.BASE, "detection_round": 1}, refused=set())
+        self.assertIn("[LIAR]", text)
+        self.assertNotIn("did not lie", text)
+
+    def test_every_liar_refusing_says_the_numbers_mean_nothing(self):
+        text = self.shown({**self.BASE, "detection_round": None},
+                          refused={"B"}, liars=("B",))
+        self.assertIn("no liar actually lied", text)
+        self.assertIn("say nothing about", text)
+
+    def test_no_refusal_prints_no_note(self):
+        text = self.shown({**self.BASE, "detection_round": 1}, refused=set())
+        self.assertNotIn("CAREFUL", text)
+
+
+class TestRefusalIsReportedOncePerQuestion(unittest.TestCase):
+    """The same sentence three rounds running is noise, and noise is what
+    stops people reading warnings at all."""
+
+    def test_a_steady_refusal_is_said_once(self):
+        agents = {"A": Scripted("A", ["yes"] * 4),
+                  "B": Scripted("B", ["yes"] * 4),
+                  "C": Scripted("C", ["yes"] * 4)}
+        net, text = run_network(agents, rounds=4, attackers=1,
+                                questions=[Question("Q", "yes", "no")])
+        net.liars = ["B"]
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            asyncio.run(net.run_question(net.cfg.questions[0]))
+        self.assertEqual(buffer.getvalue().count("NOT attacking"), 1)
+
+    def test_it_can_be_said_again_if_the_liar_resumes_then_stops(self):
+        net = Network(Config(questions=[Question("Q", "yes", "no")], agents=3,
+                             rounds=2, trust=True),
+                      client=None, force_trust=True,
+                      agents={n: Scripted(n, ["yes"]) for n in "ABC"})
+        net.liars = ["B"]
+        net.agents["B"].wrong_answer = "no"
+        net.agents["B"].answer = "yes"          # refusing
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            net._report("B")
+            net.agents["B"].answer = "no"       # back to attacking
+            net._report("B")
+            net.agents["B"].answer = "yes"      # stopped again
+            net._report("B")
+        self.assertEqual(buffer.getvalue().count("NOT attacking"), 2)
+
+
+# ------------------------------------- 8. warnings that fire at the wrong time
 
 class TestLiarRefusalWarningIsScoped(unittest.TestCase):
     """Two ways the refusal warning could cry wolf."""

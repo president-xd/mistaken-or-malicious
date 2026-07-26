@@ -358,7 +358,7 @@ class Network:
         self.rows.append(scores)
         per_agent = metrics.per_agent(self.agents, heard, self.liars)
         log.final_report(self.agents, self.liars, question.answer, scores,
-                         self.use_trust)
+                         self.use_trust, self.liar_refused)
         if recorder:
             recorder.finish_question(final, scores, per_agent)
         return scores
@@ -385,9 +385,17 @@ class Network:
         lie = getattr(agent, "wrong_answer", "")
         if name in self.liars and lie and agent.answer and not self.asleep:
             if not metrics.is_correct(agent.answer, lie):
+                # Say it once per question, not once per round. The same
+                # sentence three times in a row is noise, and noise is what
+                # stops people reading warnings at all.
+                if name not in self.liar_refused:
+                    log.warn(name, f"was told to answer {lie!r} but answered "
+                                   f"{agent.answer!r} - it is NOT attacking")
                 self.liar_refused.add(name)
-                log.warn(name, f"was told to answer {lie!r} but answered "
-                               f"{agent.answer!r} - it is NOT attacking")
+            else:
+                # It went back to attacking, so let it be reported again if it
+                # stops later in the same question.
+                self.liar_refused.discard(name)
 
         # The BELIEF line was unusable, so the confidence shown below is our
         # fallback, not the model's opinion. This used to be silent.
