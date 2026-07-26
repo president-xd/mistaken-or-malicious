@@ -20,15 +20,18 @@ You need **Python 3.10+** and **Ollama** (https://ollama.com/download).
 **a. Get the models.** One chat model, and one small embedding model:
 
 ```bash
-ollama pull llama3.1:8b-instruct-q8_0
+ollama pull qwen2.5:14b
 ```
 
 ```bash
 ollama pull nomic-embed-text
 ```
 
-A 1-billion model such as `llama3.2:1b` will run, but it is too random for real
-results. Use an 8-billion model or larger.
+`qwen2.5:14b` is the best local model we measured — it is the only one that got
+every answer right, kept the answer format every time, and defended a lie
+without giving the game away. `llama3.1:8b-instruct-q8_0` also works and is
+faster. A 1-billion model such as `llama3.2:1b` will run but is far too random
+for real results. See [section 13](#13-which-model-to-use).
 
 **b. Check Ollama is running:**
 
@@ -49,8 +52,11 @@ python -m venv .venv
 ```
 
 ```bash
-pip install autogen-agentchat "autogen-ext[ollama]" pyyaml colorama ollama
+pip install -r requirements.txt
 ```
+
+That installs everything, for both providers. The tests need nothing else — they
+call no model, so they run with Ollama switched off and no API key.
 
 ---
 
