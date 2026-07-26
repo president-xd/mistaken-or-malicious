@@ -16,7 +16,8 @@ from dataclasses import replace
 
 from . import logging_utils as log
 from . import metrics, providers, repeat, roles, schedule, topology, trust as trust_math
-from .agent import PeerAgent, agent_names, belief_shift, make_model_client
+from .agent import (PeerAgent, agent_names, belief_shift, make_clients,
+                    make_model_client, top_answer)
 from .config import Config
 from .embed import make_embedder
 
@@ -50,9 +51,16 @@ class Network:
                 self.names, cfg.attackers, cfg.attacker_places,
                 cfg.topology, cfg.seed)
 
+        # `client` may be one shared client, or a list holding one per agent so
+        # each can carry its own seed. See agent.make_clients.
+        def client_for(index):
+            if isinstance(client, (list, tuple)):
+                return client[index % len(client)]
+            return client
+
         self.agents = agents or {
             name: PeerAgent(
-                name, client,
+                name, client_for(i),
                 role="liar" if name in self.liars else "honest",
                 wrong_answer=cfg.attacker_answer,
                 agreeableness=cfg.trait_for(i, "agreeableness"),
@@ -74,6 +82,9 @@ class Network:
         self.history: list[dict] = []
         self.last_scores: dict[str, float] = {}
         # A sleeper behaves well for the first half of the questions, then lies.
+        # Liars that answered something other than the lie they were given.
+        # An empty set means every liar really attacked.
+        self.liar_refused: set[str] = set()
         self.learning = True   # may this question change trust?
         self.asleep = cfg.sleeper
         self.wake_after = max(1, len(cfg.questions) // 2) if cfg.sleeper else 0
@@ -150,7 +161,18 @@ class Network:
         # Exact matching only uses half the range (see trust.stretch_exact).
         if cfg.scoring == "answer":
             raw_agree = {n: trust_math.stretch_exact(v) for n, v in raw_agree.items()}
-            consist = {n: trust_math.stretch_exact(v) for n, v in consist.items()}
+            # `consist` needs care here. It returns the neutral 0.5 when there
+            # is no previous round to compare against, and stretch_exact maps
+            # 0.5 to 0.0 - the WORST possible score. That punished every agent
+            # in the first discussion round for having no history, including
+            # agents that had not moved at all.
+            #
+            # A value that is not a similarity measurement must not be
+            # stretched like one. Agents with no previous answer keep the
+            # neutral value; only real measurements are stretched.
+            consist = {n: (trust_math.stretch_exact(v)
+                           if n in self.previous_vectors else trust_math.NEUTRAL)
+                       for n, v in consist.items()}
             raw_anomaly = {n: trust_math.stretch_exact(v, is_anomaly=True)
                            for n, v in raw_anomaly.items()}
 
@@ -164,11 +186,17 @@ class Network:
             score = trust_math.behaviour_score(
                 agree[name], consist[name], anomaly[name],
                 cfg.weight_agree, cfg.weight_consist, cfg.weight_anomaly)
+            # Rounded for the screen and the JSON file. `exact` keeps the full
+            # value, because the trust update must use the number the formula
+            # produced, not a shortened version of it. Feeding the rounded
+            # score back in made the stored trust drift away from the maths by
+            # up to 5e-5 every round, for no reason other than display.
             signals[name] = {
                 "agree": round(agree[name], 4),
                 "consist": round(consist[name], 4),
                 "anomaly": round(anomaly[name], 4),
                 "score": round(score, 4),
+                "exact": score,
             }
 
         # Move every listener's trust in every speaker it can hear.
@@ -177,10 +205,10 @@ class Network:
             for speaker in self.speakers_for(listener):
                 self.trust[listener][speaker] = trust_math.update_trust(
                     self.trust[listener][speaker],
-                    signals[speaker]["score"], cfg.trust_memory)
+                    signals[speaker]["exact"], cfg.trust_memory)
 
         self.previous_vectors = vectors
-        self.last_scores = {n: signals[n]['score'] for n in signals}
+        self.last_scores = {n: signals[n]['exact'] for n in signals}
         self.history.append({i: dict(r) for i, r in self.trust.items()})
         return signals
 
@@ -257,9 +285,14 @@ class Network:
                 self._report(name, changed, by)
                 shift = belief_shift(before[name], self.agents[name].belief)
                 if before[name] and not changed and shift >= _CONCESSION:
-                    log.conceded(name, shift,
-                                 _gained_most(before[name], self.agents[name].belief,
-                                              self.agents[name].answer))
+                    log.conceded(
+                        name, shift,
+                        _gained_most(before[name], self.agents[name].belief,
+                                     self.agents[name].answer),
+                        # A full move onto another answer is not a concession,
+                        # it is the agent disagreeing with itself.
+                        contradicts=getattr(self.agents[name],
+                                            "belief_disagrees", False))
                 changes += changed
 
             # On a frozen question we still SHOW the signals but do not
@@ -304,6 +337,30 @@ class Network:
             log.retry(name)
         if not agent.parsed:
             log.warn(name, "no ANSWER line after retry - previous answer kept")
+
+        # The three checks below read optional attributes with getattr, so any
+        # stand-in agent object works without having to declare them.
+
+        # A liar that answered something other than the lie it was handed has
+        # refused to attack. Without this the run still calls it [LIAR] and
+        # scores the experiment as though an attack happened, when it did not.
+        lie = getattr(agent, "wrong_answer", "")
+        if name in self.liars and lie and agent.answer:
+            if not metrics.is_correct(agent.answer, lie):
+                self.liar_refused.add(name)
+                log.warn(name, f"was told to answer {lie!r} but answered "
+                               f"{agent.answer!r} - it is NOT attacking")
+
+        # The BELIEF line was unusable, so the confidence shown below is our
+        # fallback, not the model's opinion. This used to be silent.
+        if getattr(agent, "belief_ignored", False):
+            log.warn(name, "its BELIEF line named no real answer - the "
+                           "confidence below is a fallback, not its own view")
+        # The agent's own belief contradicts the answer it gave.
+        if getattr(agent, "belief_disagrees", False):
+            log.warn(name, f"answered {agent.answer!r} but puts most of its "
+                           f"belief on {top_answer(agent.belief)!r}")
+
         if changed:
             log.changed(name, by)
         else:
@@ -373,7 +430,9 @@ async def run_network(cfg: Config, recorder=None) -> None:
     """Run everything the config asks for."""
     # Fail now if the provider cannot work at all, rather than half a run in.
     providers.check_ready(cfg.provider)
-    client = make_model_client(cfg.model, cfg.provider)
+    # One client per agent, each with its own seed, so the run repeats exactly
+    # while the agents still answer independently of each other.
+    client = make_clients(cfg.model, cfg.provider, cfg.seed, cfg.agents)
     try:
         if cfg.repeats > 1:
             await _repeat(cfg, client, recorder)
@@ -381,7 +440,9 @@ async def run_network(cfg: Config, recorder=None) -> None:
             random.seed(cfg.seed)
             await _once(cfg, client, recorder)
     finally:
-        await client.close()
+        # One client per agent now, so close them all.
+        for one in (client if isinstance(client, (list, tuple)) else [client]):
+            await one.close()
 
 
 async def _once(cfg: Config, client, recorder):
