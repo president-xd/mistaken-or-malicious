@@ -86,6 +86,93 @@ class TestConfigRejectsBadValues(unittest.TestCase):
         self.check_rejected(sleeper=True, attackers=0)
 
 
+class TestResultFileRecordsEverySetting(unittest.TestCase):
+    """The README promises the file holds "every setting used for the run".
+
+    A hand-written list had gone stale: 18 of the 35 settings were missing,
+    including ones that change the answer - sharpen, start_trust, warmup,
+    trust_floor, parallel. Nobody reading the file could have repeated the run.
+
+    The settings are now read from the Config object itself, so this test
+    fails the moment somebody adds a setting that does not get recorded.
+    """
+
+    def saved_settings(self):
+        cfg = Config(questions=[Question("Q", "a", "b")], agents=3)
+        return Results(cfg, ["Agent_A", "Agent_B", "Agent_C"], ["Agent_B"])
+
+    def test_no_setting_is_missing(self):
+        import dataclasses
+        saved = set(self.saved_settings().data["settings"])
+        every = {f.name for f in dataclasses.fields(Config)} - {"questions"}
+        self.assertEqual(every - saved, set(),
+                         "these settings are not written to the result file")
+
+    def test_the_ones_that_change_the_answer_are_there(self):
+        saved = self.saved_settings().data["settings"]
+        for setting in ("sharpen", "start_trust", "warmup", "trust_floor",
+                        "parallel", "hear_yourself", "trust_carry_over"):
+            self.assertIn(setting, saved)
+
+    def test_the_extra_readable_fields_survive(self):
+        saved = self.saved_settings().data["settings"]
+        self.assertEqual(saved["attacker_seats"], ["Agent_B"])
+        self.assertEqual(sorted(saved["weights"]), ["agree", "anomaly", "consist"])
+
+    def test_the_whole_thing_still_writes_as_json(self):
+        json.dumps(self.saved_settings().data)
+
+
+class TestUnreadableConfigFiles(unittest.TestCase):
+    """The file itself can be wrong before any setting is read.
+
+    These are the most common mistakes of all - a typo in the path, a broken
+    indent - so they must produce a plain sentence, never a traceback. A
+    traceback tells a user nothing about what to fix.
+    """
+
+    def message_from(self, path):
+        with self.assertRaises(SystemExit) as caught:
+            load_config(path)
+        return str(caught.exception)
+
+    def temp(self, text, suffix=".yaml"):
+        handle = tempfile.NamedTemporaryFile("w", suffix=suffix, delete=False,
+                                             encoding="utf-8")
+        handle.write(text)
+        handle.close()
+        self.addCleanup(os.unlink, handle.name)
+        return handle.name
+
+    def test_a_missing_file_says_so_and_suggests_a_fix(self):
+        message = self.message_from("no_such_config_file.yaml")
+        self.assertIn("not found", message)
+        self.assertIn("config.yaml", message)
+
+    def test_broken_yaml_names_the_file_and_the_problem(self):
+        path = self.temp("agents: 3\n  bad indent: [\n")
+        message = self.message_from(path)
+        self.assertIn("not valid YAML", message)
+        self.assertIn(path, message)
+
+    def test_a_list_instead_of_settings_is_refused(self):
+        path = self.temp("- just\n- a\n- list\n")
+        message = self.message_from(path)
+        self.assertIn("settings", message)
+        self.assertIn("list", message)
+
+    def test_a_folder_is_refused(self):
+        """Windows raises PermissionError here, Linux IsADirectoryError."""
+        folder = tempfile.mkdtemp()
+        self.addCleanup(os.rmdir, folder)
+        self.assertIn("folder", self.message_from(folder))
+
+    def test_an_empty_file_is_refused_for_having_no_questions(self):
+        """Empty YAML parses to None, which must not crash on the way past."""
+        path = self.temp("")
+        self.assertIn("question", self.message_from(path).lower())
+
+
 class TestConfigAcceptsGoodValues(unittest.TestCase):
 
     def load(self, **changes):
