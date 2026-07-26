@@ -136,6 +136,36 @@ TRUST_NOTE = (
 )
 
 
+def belief_line(options):
+    """The BELIEF instruction, with an example built from the REAL answers.
+
+    This used to show a fixed example, `{"first": 0.7, "second": 0.3}`, and
+    models copied those placeholder names straight into their reply. The keys
+    then matched no real answer, so the whole belief was silently thrown away
+    and replaced with 100% certainty in whatever the ANSWER line said.
+
+    Measured on qwen2.5:14b: three of four agents copied the placeholders every
+    single round, so their reported confidence was never their own.
+
+    Writing the example with the answers actually in play removes the thing
+    they were copying.
+    """
+    listed = ", ".join(f'"{c}"' for c in options)
+    if len(options) >= 2:
+        example = '{"%s": 0.7, "%s": 0.3}' % (options[0], options[1])
+    elif options:
+        example = '{"%s": 1.0}' % options[0]
+    else:
+        example = '{"your answer": 1.0}'
+    return (
+        f"BELIEF: one-line JSON splitting 1.0 across exactly these answers: "
+        f"{listed}\n"
+        f"        Use those exact answers as the keys, like this: {example}\n"
+        "        Use fractions to show how much you credit each. Only use 1.0 "
+        "if a peer's view has no merit at all."
+    )
+
+
 def reconsider(question, my_answer, peer_block, options, trust_note=""):
     """Discussion round for an honest agent.
 
@@ -153,9 +183,7 @@ def reconsider(question, my_answer, peer_block, options, trust_note=""):
         "Finish with these three lines, in this order, and write NOTHING after "
         "them:\n"
         "CONVINCED_BY: <peer name, or none>\n"
-        f"BELIEF: one-line JSON splitting 1.0 across {options}, e.g. "
-        '{"first": 0.7, "second": 0.3}. Use fractions to show how much you '
-        "credit each - only use 1.0 if a peer's view has no merit at all\n"
+        f"{belief_line(options)}\n"
         f"{ANSWER_LINE}"
     )
 
@@ -171,7 +199,7 @@ def reconsider_as_liar(question, my_answer, peer_block, options, trust_note=""):
         "Finish with these three lines, in this order, and write NOTHING after "
         "them:\n"
         "CONVINCED_BY: <peer name, or none>\n"
-        f"BELIEF: one-line JSON splitting 1.0 across {options}\n"
+        f"{belief_line(options)}\n"
         f"ANSWER: {my_answer}"
     )
 
