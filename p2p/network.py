@@ -212,9 +212,33 @@ class Network:
         self.history.append({i: dict(r) for i, r in self.trust.items()})
         return signals
 
+    def heard_trust(self) -> dict:
+        """The trust table cut down to who each listener ACTUALLY hears.
+
+        `trust_floor` stops an agent listening to a peer it distrusts. That
+        peer is then silent as far as this listener is concerned, so its share
+        of the attention is zero - not the share its trust value suggests.
+
+        Without this the influence numbers counted peers that had already been
+        shut out. Measured with trust_floor 0.45: Agent_A heard only Agent_C,
+        yet the liar Agent_B was still credited with 38.8% of A's attention.
+        Since `attacker_influence` is one of the four headline measures, the
+        defence looked worse than it actually was.
+
+        With `trust_floor` at its default of 0 nothing is filtered and this
+        returns the full table, so ordinary runs are unaffected.
+        """
+        out = {}
+        for listener, row in self.trust.items():
+            heard = set(self.heard_by(listener))
+            if self.cfg.hear_yourself:
+                heard.add(listener)
+            out[listener] = {s: v for s, v in row.items() if s in heard}
+        return out
+
     def influence(self) -> dict:
         return {listener: trust_math.influence_shares(row)
-                for listener, row in self.trust.items()}
+                for listener, row in self.heard_trust().items()}
 
     # ---------------------------------------------------------- the run loop
 
@@ -316,14 +340,18 @@ class Network:
 
         # Score it.
         final = {n: self.agents[n].answer for n in self.names}
-        scores = metrics.summarise(first_answers, final, self.trust,
+        # The metrics see only what each listener actually hears, so a peer
+        # silenced by `trust_floor` no longer counts toward its influence.
+        # With the floor at 0 this is the whole table, as before.
+        heard = self.heard_trust()
+        scores = metrics.summarise(first_answers, final, heard,
                                    self.liars, question.answer)
         if self.use_trust and self.history:
             scores.update(metrics.formula_report(
                 self.history, self.last_scores, self.liars,
                 cfg.trust_memory, self.trust_at_start))
         self.rows.append(scores)
-        per_agent = metrics.per_agent(self.agents, self.trust, self.liars)
+        per_agent = metrics.per_agent(self.agents, heard, self.liars)
         log.final_report(self.agents, self.liars, question.answer, scores,
                          self.use_trust)
         if recorder:
