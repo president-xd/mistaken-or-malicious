@@ -10,6 +10,7 @@ One file per run, written to the `results` folder.
 from __future__ import annotations
 
 import json
+from dataclasses import fields
 from datetime import datetime
 from pathlib import Path
 
@@ -20,20 +21,19 @@ class Results:
     def __init__(self, cfg, agents, liars):
         self.data = {
             "settings": {
-                "provider": cfg.provider,
-                "model": cfg.model,
-                "agents": cfg.agents,
-                "rounds": cfg.rounds,
-                "topology": cfg.topology,
-                "share": cfg.share,
-                "seed": cfg.seed,
-                "attackers": cfg.attackers,
+                # EVERY setting, taken straight from the Config object rather
+                # than listed by hand. A hand-written list went stale: 18 of
+                # the 35 settings were missing, including ones that change the
+                # result - sharpen, start_trust, warmup, trust_floor, parallel.
+                # Anyone reading the file could not have reproduced the run.
+                #
+                # Reading the fields means a new setting is recorded the day it
+                # is added, with nothing to remember.
+                **{f.name: getattr(cfg, f.name)
+                   for f in fields(cfg) if f.name != "questions"},
+                # Kept for readers and for older tools: who actually lied, and
+                # the three weights grouped together.
                 "attacker_seats": list(liars),
-                "attacker_answer": cfg.attacker_answer,
-                "sleeper": cfg.sleeper,
-                "trust": cfg.trust,
-                "scoring": cfg.scoring,
-                "trust_memory": cfg.trust_memory,
                 "weights": {
                     "agree": round(cfg.weight_agree, 4),
                     "consist": round(cfg.weight_consist, 4),
@@ -47,7 +47,6 @@ class Results:
             "questions": [],
             "summary": {},
         }
-        self.data["settings"]["repeats"] = cfg.repeats
         self._question = None
         # Which repeat we are inside. Stays 1 when repeats is 1.
         self._repeat, self._seed = 1, cfg.seed
