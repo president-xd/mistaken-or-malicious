@@ -28,6 +28,14 @@ from __future__ import annotations
 
 import math
 
+# "I have no information." Used when a signal cannot be measured at all, such
+# as consistency in the very first round when there is no previous answer yet.
+#
+# This is NOT a similarity value, so it must never be passed through
+# stretch_exact. Doing so maps it to 0.0, the worst possible score, and
+# punishes every agent for having no history. See network.update_trust.
+NEUTRAL = 0.5
+
 
 # --------------------------------------------------------------- basic tools
 
