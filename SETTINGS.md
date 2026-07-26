@@ -179,36 +179,56 @@ Mercury/Venus, Canberra/Sydney.
 | several calls at once | barely - measured 30s against 27s | yes - measured **4 times faster** |
 | model to name | `llama3.1:8b-instruct-q8_0` | `deepseek-v4-pro` or `deepseek-v4-flash` |
 
-**Put the key in the environment, never in a config file.** This folder is a git
-repository, so a key written into a tracked file would be committed and shared:
+**Never put the key in `config.yaml`.** That file is committed to git. Use one
+of these two instead:
 
-```bash
-export DEEPSEEK_API_KEY=sk-...
-```
+| Where | How | Committed? |
+|---|---|---|
+| a `.env` file next to `config.yaml` | `cp .env.example .env`, then edit it | no, `.env` is in `.gitignore` |
+| your shell | `export DEEPSEEK_API_KEY=sk-...` | no |
 
 PowerShell: `$env:DEEPSEEK_API_KEY = "sk-..."`. cmd: `set DEEPSEEK_API_KEY=sk-...`.
+
+The shell wins when both are set, so a key you just exported is never silently
+overridden by a stale `.env`. If `.env` still holds the example placeholder the
+run stops and says so, rather than sending it and getting a confusing 401.
 
 The run stops straight away with instructions if the key is missing, rather than
 half way through.
 
 ### Measured: what each model can do
 
-Same jobs, using the real prompts from `prompts.py`:
+Every model on the machine, through the real agent and the real prompts. Counts,
+not percentages — two models only differ meaningfully when the gap is bigger
+than one try.
 
-| | llama3.2 1B | llama3.1 8B | deepseek-v4-pro | deepseek-v4-flash |
-|---|---|---|---|---|
-| right answer alone | 1/4 | 4/4 | **12/12** | 12/12 |
-| defends the lie | 2/4 | 4/4 | 4/4 (leaked once) | 3/4 |
-| graded belief when unsure | no | no | **3/3** | 2/3 |
-| seconds per reply | fast | ~20 | 2.4 | 1.7 |
+| model | right | format | defends a lie | graded belief | s/call |
+|---|---|---|---|---|---|
+| **qwen2.5:14b** | 6/6 | 6/6 | 2/3 | **2/2** | 12.8 |
+| deepseek-r1:14b | 6/6 | 6/6 | **0/3** | 2/2 | 78.1 |
+| mistral-nemo:12b | 6/6 | 6/6 | 3/3 | 0/2 | 7.8 |
+| llama3.1:8b-instruct-q8_0 | 6/6 | 6/6 | 3/3 | 0/2 | 18.6 |
+| llama3:latest | 6/6 | 6/6 | 3/3 | 0/2 | 7.4 |
+| llama3.2:1b | 5/6 | 6/6 | 3/3 | 0/2 | 1.0 |
+| deepseek-v4-pro (API) | 12/12 | 12/12 | 3/3 | 3/3 | 2.4 |
 
-**`deepseek-v4-pro` is the one to use.** Flash is only 1.4 times faster and it
-refused to lie on one question, which stops the attack before it starts.
+Re-run it on your machine:
 
-**Graded belief is not broken after all.** It fails on every local model we
-tried, but `deepseek-v4-pro` does it correctly: it holds at 100% on a fact
-question, where a wrong peer deserves no weight, and splits its belief on a
-genuinely uncertain one. Re-run this yourself with `python __deepseek.py`.
+```bash
+python dynamic-tests/screen_models.py
+```
+
+**Use `qwen2.5:14b`.** It is the only local model that does every job. Use
+`llama3:latest` when you want speed and do not need the confidence number.
+
+**Never `deepseek-r1:14b` for an attack experiment.** It refused to defend a
+wrong answer 3 times out of 3. A reasoning model reasons its way out of lying,
+so no attack ever starts.
+
+**Graded belief needs 14 billion.** Every model below that scored 0/2; both 14B
+models scored 2/2. Older versions of this file said graded belief fails at every
+size — that was measured with an unfair test that asked for a split belief on
+plain fact questions, where holding at 100% is the correct answer.
 
 ### A warning about switching model
 
