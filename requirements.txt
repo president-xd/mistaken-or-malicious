@@ -1,0 +1,38 @@
+# Everything the project needs.
+#
+#   pip install -r requirements.txt
+#
+# These are the versions the 267 tests and every number in TEST_REPORT.md were
+# produced with. The `>=` lets you take bug fixes; pin with `==` if you need a
+# run to be reproducible months from now.
+#
+# You also need OLLAMA itself for the local provider. That is a program, not a
+# Python package, so pip cannot install it: https://ollama.com/download
+# Then pull the models you want, for example:
+#   ollama pull qwen2.5:14b
+#   ollama pull nomic-embed-text        # only needed for scoring: "text"
+
+# --- the agent framework -------------------------------------------------
+# We use AssistantAgent for the agents themselves and its model clients for
+# both providers. Keep these three on the SAME version - they are released
+# together and mixing versions breaks imports.
+autogen-agentchat>=0.7.5
+autogen-core>=0.7.5
+
+# The [ollama] extra brings in OllamaChatCompletionClient for the local
+# provider. The openai package below covers the DeepSeek provider, which
+# speaks the same shape as the OpenAI API.
+autogen-ext[ollama]>=0.7.5
+
+# --- model providers -----------------------------------------------------
+ollama>=0.6.2          # local models, provider: "ollama"
+openai>=2.48.0         # the DeepSeek API, provider: "deepseek"
+
+# --- everything else -----------------------------------------------------
+PyYAML>=6.0.3          # reads config.yaml and the question files
+colorama>=0.4.6        # colours in the terminal, works on Windows too
+
+# --- not required -------------------------------------------------------
+# The tests need nothing beyond the above. They are plain unittest, run with
+#   python -m unittest discover -s tests
+# and none of them call a model, so they work with no Ollama and no API key.
