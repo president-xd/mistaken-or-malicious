@@ -162,8 +162,27 @@ def load_config(path: str, share: str | None = None,
     we fall back to that provider's default model rather than sending an
     ollama model name to the API.
     """
-    with open(path, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
+    # A missing or broken config file is the most common mistake of all, so it
+    # gets a plain message instead of a traceback.
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        raise SystemExit(f"config file not found: {path}\n"
+                         f"Check the path, or copy config.yaml to start from.")
+    except (IsADirectoryError, PermissionError):
+        # Windows raises PermissionError where Linux raises IsADirectoryError,
+        # so both land here. A genuine permissions problem gets the same
+        # message, which still points at the right thing to check.
+        if Path(path).is_dir():
+            raise SystemExit(f"'{path}' is a folder, not a config file.")
+        raise SystemExit(f"cannot read '{path}' - check the file permissions.")
+    except yaml.YAMLError as error:
+        raise SystemExit(f"config file {path} is not valid YAML:\n  {error}")
+
+    if not isinstance(raw, dict):
+        raise SystemExit(f"config file {path} must be a set of settings like "
+                         f"'agents: 4', not a {type(raw).__name__}.")
 
     from_file = str(raw.get("provider", "ollama")).lower()
     chosen = str(provider or from_file).lower()
