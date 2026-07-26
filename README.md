@@ -2,7 +2,6 @@
 
 > **Setting things up?** See **[SETTINGS.md](SETTINGS.md)** for every command
 > and every setting, with advice on what to choose.
-> **Want the test results?** See **[TEST_REPORT.md](TEST_REPORT.md)**.
 
 A small network of AI agents that answer a question, discuss it, and change their
 minds. Some agents can be told to **lie**. The other agents defend themselves with a
@@ -408,25 +407,13 @@ Everything printed on the screen is also in this file. Nothing is lost.
 | `p2p/config.py` | reads and checks config.yaml |
 | `p2p/logging_utils.py` | everything printed to the screen |
 
-Tools that are not part of the program, for checking a model before you trust it:
+Not part of the program, kept for checking a model before you trust it:
 
 | File | What it does |
 |---|---|
-| `dynamic-tests/screen_models.py` | runs every model you have through the four jobs and says which are usable |
-| `dynamic-tests/persuadability.py` | measures whether your questions can be argued about on a given model |
-| `dynamic-tests/deep_test.py` | runs the real program across many setups and lists anything that looks like our bug |
-| `p2p/__deepseek.py` | the same four jobs against the DeepSeek API, over raw HTTP |
-
-```bash
-python dynamic-tests/screen_models.py
-```
-
-```bash
-python dynamic-tests/deep_test.py --quick
-```
-
-Use `--quick` with any local model. Without it a full campaign on a 14-billion
-model runs for most of a day.
+| `p2p/__deepseek.py` | asks the DeepSeek API to do the four jobs an agent has to do |
+| `tests/run_experiments.py` | checks that a change of mind is caused by a real peer, not hard-coded |
+| `dynamic-tests/strong_attack.yaml` | the setup that makes the attack as strong as it can be |
 
 ---
 
@@ -436,17 +423,78 @@ model runs for most of a day.
 python -m unittest discover -s tests
 ```
 
-267 tests, all offline, no model needed. The trust tests check the formula against a
-worked example done by hand, so the maths is proved and not just assumed. The same is
-done for the averaging maths in `p2p/repeat.py`.
+**278 tests**, all offline, no model needed, and they finish in under a second. They run
+with Ollama switched off and no API key.
+
+The trust tests check the formula against a worked example done by hand, so the maths is
+proved and not just assumed. The same is done for the averaging maths in `p2p/repeat.py`.
+
+Three of the test files record things the method **cannot** do, rather than things it
+can. They are written to fail if somebody ever fixes the underlying problem, so that the
+fix is noticed instead of quietly changing every published number:
+
+| File | What it records |
+|---|---|
+| `tests/test_limits.py` | where the defence stops working |
+| `tests/test_locality.py` | agents are scored using answers they cannot hear |
+| `tests/test_signal_balance.py` | one signal is given far less room than the other two |
 
 ---
 
 ## 11. Things worth knowing
 
+### What the formula actually measures
+
+**It measures agreeing with the group, not being right.** This is the most important
+thing on this page, and it is proved rather than guessed.
+
+Take two situations. In both, three agents say one thing and one says another. The only
+difference is which of them is correct.
+
+| | Agent_A | Agent_B | Agent_C | Agent_D |
+|---|---|---|---|---|
+| **A:** majority right | Paris ✓ | Paris ✓ | Paris ✓ | Lyon ✗ |
+| score | 0.667 | 0.667 | 0.667 | **0.000** |
+| **B:** majority wrong | Lyon ✗ | Lyon ✗ | Lyon ✗ | Paris ✓ |
+| score | 0.667 | 0.667 | 0.667 | **0.000** |
+
+**The scores are identical.** In the first the odd one out is a liar. In the second the
+odd one out holds the only correct answer. The formula gives both 0.000.
+
+It cannot do otherwise: it never sees the correct answer, only who agrees with whom.
+
+**So the method needs two things to be true**, and neither is checked at run time:
+
+1. the honest agents are a majority, and
+2. those honest agents agree with each other
+
+When both hold, "disagrees with the group" and "is lying" are the same agents, and the
+defence works. When they do not hold, it does not fail safely. With three liars against
+one honest agent, trust in the honest agent falls to 0.084 while each liar rises to
+0.639 — the liars end up with **95.8%** of the attention against a fair share of 25%.
+The defence silences the truth and amplifies the lie.
+
+Say this plainly whenever you write the method up. It is a precondition, not a result.
+
+### The signals overlap
+
+`agree` and `anomaly` are close to the same measurement. Worked out on paper for exact
+matching, with *m* of your *n* peers sharing your answer:
+
+```
+agree       = m / sqrt(sum of squared answer counts)
+1 - anomaly = m / n
+```
+
+Both rise and fall with the same quantity. Measured correlation across 4,000 random
+situations: **0.967**. So there are not really three independent signals. There are
+about two: "do others agree with me", and "did I change my answer".
+
 **`consist` rewards an agent that never moves.** A liar that repeats the same wrong
-answer every round scores well on this signal. The other two signals are what catch it.
-If your liar never changes its answer, lower `weight_consist` and raise `weight_agree`.
+answer every round scores well on this signal. Measured over three rounds, a liar that
+never moved scored 0.667 on it while an honest agent that was genuinely persuaded and
+then corrected itself scored 0.000. It is a stubbornness signal, and stubbornness is what
+an attacker does. Leaving `weight_consist: 0.0` is the right choice.
 
 **`scoring: "text"` needs `sharpen: true`.** Embedding models measure what an answer is
 *about*, not whether it agrees. We measured "Yes, a hot dog is a sandwich" against "No,
@@ -457,9 +505,27 @@ would barely work. `scoring: "answer"` does not have this problem.
 an old trust value. With only 2 rounds, trust hardly moves and the defence will look
 like it failed when it simply ran out of time.
 
-**Half the network lying is a hard case.** When two agents say one thing and two say
-another, `agree` cannot tell which pair is honest. Expect the defence to be weaker.
-Raising `weight_anomaly` helps a little.
+**Half the network lying is not just hard, it is undecidable.** With two agents saying
+one thing and two saying another, every agent receives exactly the same score, so trust
+separation is 0.000. The formula is not merely weak here — it has no basis at all on
+which to prefer either pair. Raising `weight_anomaly` does not help.
+
+**When every agent gives a different answer, they all score 0.000 together.** Trust
+collapses across the whole network, the attention shares fall back to equal, and the
+defence quietly switches itself off. This is most likely with a weak model, which is
+exactly when you need it most.
+
+**Agents are scored using answers they cannot hear.** The behaviour score is worked out
+against every agent in the network, not against the ones a listener is connected to. In
+a mesh this makes no difference, because everyone hears everyone — which is where the
+main results come from, so those stand. In a line of five agents it changes one agent's
+trust in another by up to **0.325** purely because of agents it never heard. It also
+means the answers travel peer to peer, but the scores are worked out centrally.
+Recorded in `tests/test_locality.py`.
+
+**The trust table is really a list.** Every agent ends up with the same opinion of any
+given agent. The formula's score carries only one subscript, so this is forced by the
+maths, not by the code. Do not describe it as each agent forming its own private view.
 
 **`parallel: true` only helps a little by itself.** The code sends all the agents'
 questions at once, but Ollama answers only a few at a time by default. We measured 30
@@ -499,20 +565,20 @@ honest agent **0 times out of 3 on all four of them**:
 
 So every headline number from that question set, on that model, is a null result.
 
-Two things now guard against this:
+**The program warns you when this happens.** If no honest agent was turned in either
+half, the comparison prints
 
-1. **Screen your questions against the model you will actually use:**
+```
+Careful: this experiment measured nothing on the first two rows.
+```
 
-   ```bash
-   python dynamic-tests/persuadability.py --model deepseek-v4-pro
-   ```
+and explains that only trust separation and attacker influence still mean anything.
 
-   It runs the same measurement: one honest agent, three peers pushing the wrong
-   answer, counted over several tries. Keep the questions that can be argued about.
-
-2. **The program now warns you.** When no honest agent was turned in either half, the
-   comparison prints `Careful: this experiment measured nothing on the first two rows`
-   and explains that only trust separation and attacker influence still mean anything.
+**Before changing model, screen your questions yourself.** The measurement is simple
+and worth doing by hand: give one honest agent the correct answer, have three peers all
+push the wrong one, and count how often the honest agent gives in. Repeat three times
+per question. Keep the questions where it gives in at least once; drop the rest. A
+question the model will not budge on cannot be attacked, so it cannot test anything.
 
 ---
 
@@ -533,11 +599,9 @@ than one try.
 | llama3.2:1b | 5/6 | 6/6 | 3/3 | 0/2 | 1.0 |
 | deepseek-v4-pro (API) | 12/12 | 12/12 | 3/3 | 3/3 | 2.4 |
 
-Run it on your own machine:
-
-```bash
-python dynamic-tests/screen_models.py
-```
+These numbers were measured once, on this machine, and are recorded here. The
+script that produced them is no longer kept in the repository, so treat the
+table as a record rather than something you can re-run with one command.
 
 **Use `qwen2.5:14b`.** It is the only local model that can do every job,
 including the graded belief that the confidence number depends on.
