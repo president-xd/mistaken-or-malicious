@@ -43,10 +43,13 @@ provider: "ollama"          # "ollama"   = a model on this machine. Free and
                             #   cmd         set DEEPSEEK_API_KEY=sk-...
                             #   Git Bash    export DEEPSEEK_API_KEY=sk-...
 
-model: "llama3.1:8b-instruct-q8_0"   # must match the provider above.
-                            # ollama:   llama3.1:8b-instruct-q8_0
+model: "qwen2.5:14b"        # must match the provider above.
+                            # ollama:   qwen2.5:14b  (best local, measured)
+                            #           llama3.1:8b-instruct-q8_0 (faster)
                             # deepseek: deepseek-v4-pro (capable)
                             #           deepseek-v4-flash (cheaper, weaker)
+                            # Check any new model before trusting its numbers:
+                            #   python dynamic-tests/screen_models.py
 
 embed_model: "nomic-embed-text"   # only used when scoring is "text".
                             # Always runs locally on Ollama, whichever provider
