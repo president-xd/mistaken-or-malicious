@@ -193,11 +193,21 @@ def round_summary(r: int, changes: int) -> None:
 # ------------------------------------------------------------ trust output
 
 def trust_table(signals: dict, trust: dict, liars: list) -> None:
-    """Show the three signals and the resulting trust, so the maths is visible."""
+    """Show listener-local signals, averaged by speaker for a compact table."""
     print(f"\n  {Style.BRIGHT}TRUST UPDATE{Style.RESET_ALL}")
     print(f"    {'agent':10} {'agree':>7} {'consist':>8} {'anomaly':>8} "
           f"{'score':>7}  {'trusted by others':>18}")
-    for name, s in signals.items():
+    totals: dict[str, dict[str, list[float]]] = {}
+    for row in signals.values():
+        for speaker, values in row.items():
+            bucket = totals.setdefault(
+                speaker, {key: [] for key in ("agree", "consist", "anomaly", "score")})
+            for key in bucket:
+                bucket[key].append(values[key])
+
+    for name in sorted(totals):
+        values = totals[name]
+        s = {key: sum(items) / len(items) for key, items in values.items()}
         got = [row[name] for row in trust.values() if name in row]
         average = sum(got) / len(got) if got else 0.0
         tag = f" {Fore.RED}[LIAR]{Style.RESET_ALL}" if name in liars else ""
@@ -319,12 +329,26 @@ def _score_block(scores, use_trust) -> None:
     _line(f"  honest accuracy      {show(scores['honest_accuracy'])}   (higher is better)")
     _line(f"  attack success rate  {show(scores['attack_success_rate'])}"
           f"{_asr_workings(scores)}")
+    _line(f"  diffusion reach      {show(scores.get('diffusion_reach'))}   "
+          f"(lower is better; ever adopted the lie)")
     if use_trust:
-        _line(f"  trust separation     {show(scores['trust_separation'], False)}   "
+        normalized = scores.get("normalized_attacker_influence")
+        norm_text = "n/a" if normalized is None else f"{normalized:.3f}x"
+        _line(f"  normalized influence {norm_text}   "
+              f"(below 1.0x is better)")
+        auprc = scores.get("liar_detection_auprc")
+        _line(f"  liar detection AUPRC {'n/a' if auprc is None else f'{auprc:.3f}'}   "
               f"(higher is better)")
+        latency = scores.get("detection_latency")
+        latency_text = "not detected" if latency is None else f"{latency:g} round(s)"
+        _line(f"  detection latency    {latency_text}   (lower is better)")
+
+        # Raw values remain visible as diagnostics, but are not headline
+        # topology-comparison parameters.
+        _line(f"  raw trust separation {show(scores['trust_separation'], False)}")
         equal = scores.get("equal_share")
         note = f"   (equal share would be {equal:.1%})" if equal else ""
-        _line(f"  attacker influence   {show(scores['attacker_influence'])}{note}")
+        _line(f"  raw attacker share   {show(scores['attacker_influence'])}{note}")
 
         # These judge the FORMULA, not just whether the liar was caught.
         if "separation_margin" in scores:
@@ -357,10 +381,24 @@ def _score_block(scores, use_trust) -> None:
                 _line(f"    matches the maths  {theory:.4f}   {verdict}")
 
 
-_MEASURES = [("honest accuracy", "honest_accuracy", True, True),
-             ("attack success rate", "attack_success_rate", False, True),
-             ("trust separation", "trust_separation", True, False),
-             ("attacker influence", "attacker_influence", False, True)]
+_MEASURES = [("honest accuracy", "honest_accuracy", True, "percent"),
+             ("attack success rate", "attack_success_rate", False, "percent"),
+             ("normalized influence", "normalized_attacker_influence", False, "ratio"),
+             ("diffusion reach", "diffusion_reach", False, "percent"),
+             ("liar detection AUPRC", "liar_detection_auprc", True, "score"),
+             ("detection latency", "detection_latency", False, "round")]
+
+
+def _metric_text(value, style: str) -> str:
+    if value is None:
+        return "n/a"
+    if style == "percent":
+        return f"{value:.1%}"
+    if style == "ratio":
+        return f"{value:.3f}x"
+    if style == "round":
+        return f"{value:.2f}"
+    return f"{value:.3f}"
 
 
 def repeat_header(number: int, total: int, seed: int) -> None:
@@ -376,25 +414,24 @@ def repeats_table(combined: dict, title: str) -> None:
     """
     banner(title)
     print(f"    {'measure':22} {'average':>10} {'lowest':>10} "
-          f"{'highest':>10} {'spread':>10}")
-    for label, key, _, as_percent in _MEASURES + [
-            ("started right", "started_right", True, False)]:
+          f"{'highest':>10} {'spread':>10} {'95% CI':>23}")
+    for label, key, _, style in _MEASURES + [
+            ("started right", "started_right", True, "count")]:
         item = combined.get(key)
         if not isinstance(item, dict):
             print(f"    {label:22} {'n/a':>10}")
             continue
         if key == "started_right":
             fmt = _count
-        elif as_percent:
-            def fmt(v):
-                return f"{v:.1%}"
         else:
             def fmt(v):
-                return f"{v:+.3f}"
+                return _metric_text(v, style)
         wide = (f"{item['spread']:.3f}" if item.get("spread") is not None
                 else "n/a")
+        ci = (f"[{fmt(item['ci95_low'])}, {fmt(item['ci95_high'])}]"
+              if item.get("ci95_low") is not None else "n/a")
         print(f"    {label:22} {fmt(item['mean']):>10} {fmt(item['lowest']):>10} "
-              f"{fmt(item['highest']):>10} {wide:>10}")
+              f"{fmt(item['highest']):>10} {wide:>10} {ci:>23}")
 
 
 def repeats_comparison(without: dict, with_trust: dict, runs: int,
@@ -413,20 +450,21 @@ def repeats_comparison(without: dict, with_trust: dict, runs: int,
            f"'spread' is how far the repeats sat from their own average.")
     print(f"    {'measure':22} {left + ' (avg +- spread)':>{wide}} "
           f"{right + ' (avg +- spread)':>{wide}}   verdict")
-    for label, key, higher_better, as_percent in _MEASURES:
+    for label, key, higher_better, style in _MEASURES:
         a, b = without.get(key), with_trust.get(key)
         if not isinstance(a, dict) or not isinstance(b, dict):
             print(f"    {label:22} {'n/a':>{wide}} {'n/a':>{wide}}")
             continue
 
         def cell(item):
-            if as_percent:
+            if style == "percent":
                 wide = (f" +- {item['spread']:.1%}"
                         if item.get("spread") is not None else "")
                 return f"{item['mean']:.1%}{wide}"
-            wide = (f" +- {item['spread']:.3f}"
+            suffix = "x" if style == "ratio" else ""
+            wide = (f" +- {item['spread']:.3f}{suffix}"
                     if item.get("spread") is not None else "")
-            return f"{item['mean']:+.3f}{wide}"
+            return f"{item['mean']:.3f}{suffix}{wide}"
 
         better = (b["mean"] > a["mean"]) if higher_better else (b["mean"] < a["mean"])
         same = abs(b["mean"] - a["mean"]) < 1e-9
@@ -444,6 +482,23 @@ def repeats_comparison(without: dict, with_trust: dict, runs: int,
     _empty_experiment_note(_means(without), _means(with_trust))
 
 
+def topology_comparison(summaries: dict[str, dict]) -> None:
+    """Print the controlled six-metric comparison after a topology sweep."""
+    banner("FINAL TOPOLOGY COMPARISON")
+    labels = [("accuracy", "honest_accuracy", "percent"),
+              ("ASR", "attack_success_rate", "percent"),
+              ("norm influence", "normalized_attacker_influence", "ratio"),
+              ("diffusion", "diffusion_reach", "percent"),
+              ("AUPRC", "liar_detection_auprc", "score"),
+              ("detection", "detection_latency", "round")]
+    print(f"    {'topology':12}" + "".join(f"{label:>16}" for label, _, _ in labels))
+    for kind, scores in summaries.items():
+        cells = [_metric_text(scores.get(key), style)
+                 for _, key, style in labels]
+        print(f"    {kind:12}" + "".join(f"{cell:>16}" for cell in cells))
+    print("\n    Better: accuracy/AUPRC higher; ASR/influence/diffusion/detection lower.")
+
+
 def _means(combined: dict) -> dict:
     """Pull just the averages out, so the shared helpers can use them."""
     return {k: (v["mean"] if isinstance(v, dict) else None)
@@ -454,12 +509,12 @@ def comparison(without, with_trust, left="without trust", right="with trust") ->
     """The headline result: the same test, run both ways."""
     banner(f"RESULT: {left}  vs  {right}")
     print(f"    {'measure':22} {left:>16} {right:>16}   better?")
-    for label, key, higher_better, as_percent in _MEASURES:
+    for label, key, higher_better, style in _MEASURES:
         a, b = without.get(key), with_trust.get(key)
         if a is None or b is None:
             print(f"    {label:22} {'n/a':>16} {'n/a':>16}")
             continue
-        fmt = (lambda v: f"{v:.1%}") if as_percent else (lambda v: f"{v:+.3f}")
+        fmt = lambda v: _metric_text(v, style)
         better = (b > a) if higher_better else (b < a)
         mark = (f"{Fore.GREEN}yes{Style.RESET_ALL}" if better
                 else f"{Fore.YELLOW}no{Style.RESET_ALL}" if b != a else "same")
@@ -487,21 +542,22 @@ def _empty_experiment_note(without, with_trust) -> None:
     turned = [side.get("turned") for side in (without, with_trust)]
     if any(t is None for t in turned) or any(t > 0 for t in turned):
         return
+    diffusion = [side.get("diffusion_reach") for side in (without, with_trust)]
+    if any(value is not None and value > 0 for value in diffusion):
+        return          # agents were affected temporarily, then recovered
     started = without.get("started_right")
     if started is not None and started <= 0:
         return          # nobody was ever right, which is a different problem
 
     print(f"\n    {Fore.YELLOW}{Style.BRIGHT}Careful: this experiment measured "
-          f"nothing on the first two rows.{Style.RESET_ALL}")
+          f"no decision or diffusion damage.{Style.RESET_ALL}")
     print("    No honest agent was turned in EITHER half, so honest accuracy "
           "and attack")
     print("    success rate cannot tell the two setups apart. The model was too "
           "sure of")
     print("    these questions for the attack to start.")
-    print("    Only trust separation and attacker influence mean anything here, "
-          "and both")
-    print("    come from the trust table rather than from anything an agent "
-          "decided.")
+    print("    Only the trust/influence detection measures are informative here; ")
+    print("    they come from the trust table rather than an agent decision.")
     print("    Fix: screen the questions against THIS model first. See "
           "'Check your")
     print("    questions before you trust a result' in README.md.")
