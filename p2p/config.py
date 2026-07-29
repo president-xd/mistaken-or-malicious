@@ -52,6 +52,7 @@ class Config:
     agents: int = 3
     rounds: int = 2
     topology: str = "mesh"
+    topologies: list[str] = field(default_factory=list)
     share: str = "answer"
     seed: int = 1
 
@@ -210,6 +211,15 @@ def load_config(path: str, share: str | None = None,
     if limit > 0:
         questions = questions[:limit]
 
+    raw_topologies = raw.get("topologies", [])
+    if raw_topologies is None:
+        raw_topologies = []
+    if not isinstance(raw_topologies, list):
+        raise SystemExit(
+            f"config error in {path}: 'topologies' must be a YAML list, "
+            "for example: [mesh, star, ring]")
+    topologies = [str(kind).strip().lower() for kind in raw_topologies]
+
     cfg = Config(
         questions=questions,
         provider=chosen,
@@ -219,6 +229,7 @@ def load_config(path: str, share: str | None = None,
         agents=int(raw.get("agents", raw.get("num_agents", 3))),
         rounds=int(raw.get("rounds", 2)),
         topology=str(raw.get("topology", "mesh")).lower(),
+        topologies=topologies,
         share=str(share or raw.get("share", "answer")).lower(),
         seed=int(raw.get("seed", 1)),
         attackers=int(raw.get("attackers", 0)),
@@ -275,6 +286,10 @@ def _check(cfg: Config, path: str) -> None:
     if cfg.topology not in topology.available():
         stop(f"unknown topology '{cfg.topology}'. "
              f"choose one of: {', '.join(topology.available())}")
+    for kind in cfg.topologies:
+        if kind not in topology.available():
+            stop(f"unknown topology '{kind}' in 'topologies'. "
+                 f"choose from: {', '.join(topology.available())}")
 
     if not 0 <= cfg.attackers <= cfg.agents:
         stop(f"'attackers' must be between 0 and {cfg.agents}.")
