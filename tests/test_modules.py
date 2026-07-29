@@ -51,6 +51,12 @@ class TestConfigRejectsBadValues(unittest.TestCase):
     def test_unknown_topology(self):
         self.check_rejected(topology="banana")
 
+    def test_unknown_topology_in_sweep(self):
+        self.check_rejected(topologies=["mesh", "banana"])
+
+    def test_topology_sweep_must_be_a_list(self):
+        self.check_rejected(topologies="mesh")
+
     def test_unknown_share_mode(self):
         self.check_rejected(share="silly")
 
@@ -181,6 +187,10 @@ class TestConfigAcceptsGoodValues(unittest.TestCase):
             return load_config(path)
         finally:
             os.unlink(path)
+
+    def test_topology_sweep_is_loaded_and_normalized(self):
+        cfg = self.load(topologies=["MESH", "Star"])
+        self.assertEqual(cfg.topologies, ["mesh", "star"])
 
     def test_three_thirds_are_scaled_to_exactly_one(self):
         """0.333 three times is 0.999. That is clearly what the user meant."""
@@ -405,6 +415,28 @@ class TestResultsFile(unittest.TestCase):
 
     def test_no_run_name_means_nothing_is_ever_skipped(self):
         self.assertEqual(already_done("", folder=self.dir), "")
+
+
+class TestCommandLineResults(unittest.TestCase):
+
+    def test_topology_sweep_uses_the_sweep_recorder(self):
+        import sys
+        from unittest.mock import AsyncMock, patch
+
+        from p2p import __main__ as cli
+
+        cfg = Config(questions=[Question("Q", "a", "b")], agents=2,
+                     topologies=["mesh", "star"])
+        with (patch.object(sys, "argv", ["p2p", "config.yaml", "--result", "json"]),
+              patch.object(cli, "load_config", return_value=cfg),
+              patch.object(cli, "SweepResults") as sweep_results,
+              patch.object(cli, "Results") as single_results,
+              patch.object(cli, "run_network", new_callable=AsyncMock)):
+            sweep_results.return_value.save.return_value = "results/sweep.json"
+            cli.main()
+
+        sweep_results.assert_called_once_with(cfg)
+        single_results.assert_not_called()
 
 
 if __name__ == "__main__":
