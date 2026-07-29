@@ -50,6 +50,11 @@ class Network:
             self.liars = roles.choose_seats(
                 self.names, cfg.attackers, cfg.attacker_places,
                 cfg.topology, cfg.seed)
+        if ((cfg.attacker_places or "").strip().lower() == "strategic"
+                and len(self.liars) != min(cfg.attackers, len(self.names))):
+            raise RuntimeError(
+                f"strategic placement requested {cfg.attackers} liar(s) but "
+                f"selected {len(self.liars)}; refusing to run a different experiment")
 
         # `client` may be one shared client, or a list holding one per agent so
         # each can carry its own seed. See agent.make_clients.
@@ -149,55 +154,64 @@ class Network:
             self.previous_vectors = {n: v + [0.0] * (width - len(v))
                                      for n, v in self.previous_vectors.items()}
 
-        # Work out the three signals for every agent.
-        raw_agree, raw_anomaly, consist = {}, {}, {}
-        for name in self.names:
-            others = [vectors[m] for m in self.names if m != name]
-            raw_agree[name] = trust_math.agree_score(vectors[name], others)
-            raw_anomaly[name] = trust_math.anomaly_score(vectors[name], others)
-            consist[name] = trust_math.consist_score(
-                vectors[name], self.previous_vectors.get(name))
+        # Work out the signals separately for every listener/speaker edge.
+        # A listener may use its own answer and the answers of peers it can
+        # actually hear, but never a remote agent hidden by the topology. The
+        # old implementation compared every speaker with the entire network,
+        # which let a distant honest majority rescue sparse topologies.
+        raw: dict[str, dict[str, dict[str, float]]] = {}
+        for listener in self.names:
+            speakers = self.speakers_for(listener)
+            locally_visible = list(dict.fromkeys([listener, *speakers]))
+            raw[listener] = {}
+            for speaker in speakers:
+                others = [vectors[name] for name in locally_visible
+                          if name != speaker]
+                raw[listener][speaker] = {
+                    "agree": trust_math.agree_score(vectors[speaker], others),
+                    "consist": trust_math.consist_score(
+                        vectors[speaker], self.previous_vectors.get(speaker)),
+                    "anomaly": trust_math.anomaly_score(vectors[speaker], others),
+                }
 
         # Exact matching only uses half the range (see trust.stretch_exact).
         if cfg.scoring == "answer":
-            raw_agree = {n: trust_math.stretch_exact(v) for n, v in raw_agree.items()}
-            # `consist` needs care here. It returns the neutral 0.5 when there
-            # is no previous round to compare against, and stretch_exact maps
-            # 0.5 to 0.0 - the WORST possible score. That punished every agent
-            # in the first discussion round for having no history, including
-            # agents that had not moved at all.
-            #
-            # A value that is not a similarity measurement must not be
-            # stretched like one. Agents with no previous answer keep the
-            # neutral value; only real measurements are stretched.
-            consist = {n: (trust_math.stretch_exact(v)
-                           if n in self.previous_vectors else trust_math.NEUTRAL)
-                       for n, v in consist.items()}
-            raw_anomaly = {n: trust_math.stretch_exact(v, is_anomaly=True)
-                           for n, v in raw_anomaly.items()}
+            for row in raw.values():
+                for speaker, values in row.items():
+                    values["agree"] = trust_math.stretch_exact(values["agree"])
+                    values["anomaly"] = trust_math.stretch_exact(
+                        values["anomaly"], is_anomaly=True)
+                    # No previous answer means neutral, not a failed consistency
+                    # check. Stretch only real similarity measurements.
+                    values["consist"] = (
+                        trust_math.stretch_exact(values["consist"])
+                        if speaker in self.previous_vectors
+                        else trust_math.NEUTRAL)
 
-        # Real embeddings squash everything together, so optionally stretch the
-        # range we actually saw. See trust.sharpen for why.
-        agree = trust_math.sharpen(raw_agree) if cfg.sharpen else raw_agree
-        anomaly = trust_math.sharpen(raw_anomaly) if cfg.sharpen else raw_anomaly
-
-        signals = {}
-        for name in self.names:
-            score = trust_math.behaviour_score(
-                agree[name], consist[name], anomaly[name],
-                cfg.weight_agree, cfg.weight_consist, cfg.weight_anomaly)
-            # Rounded for the screen and the JSON file. `exact` keeps the full
-            # value, because the trust update must use the number the formula
-            # produced, not a shortened version of it. Feeding the rounded
-            # score back in made the stored trust drift away from the maths by
-            # up to 5e-5 every round, for no reason other than display.
-            signals[name] = {
-                "agree": round(agree[name], 4),
-                "consist": round(consist[name], 4),
-                "anomaly": round(anomaly[name], 4),
-                "score": round(score, 4),
-                "exact": score,
-            }
+        # Embedding similarities can occupy a very narrow range. Sharpen only
+        # within one listener's local evidence; global sharpening would leak
+        # remote agents back into the calculation.
+        signals: dict[str, dict[str, dict[str, float]]] = {}
+        for listener, row in raw.items():
+            raw_agree = {speaker: values["agree"]
+                         for speaker, values in row.items()}
+            raw_anomaly = {speaker: values["anomaly"]
+                           for speaker, values in row.items()}
+            agree = trust_math.sharpen(raw_agree) if cfg.sharpen else raw_agree
+            anomaly = (trust_math.sharpen(raw_anomaly)
+                       if cfg.sharpen else raw_anomaly)
+            signals[listener] = {}
+            for speaker, values in row.items():
+                score = trust_math.behaviour_score(
+                    agree[speaker], values["consist"], anomaly[speaker],
+                    cfg.weight_agree, cfg.weight_consist, cfg.weight_anomaly)
+                signals[listener][speaker] = {
+                    "agree": round(agree[speaker], 4),
+                    "consist": round(values["consist"], 4),
+                    "anomaly": round(anomaly[speaker], 4),
+                    "score": round(score, 4),
+                    "exact": score,
+                }
 
         # Move every listener's trust in every speaker it can hear.
         # When `learn` is off, trust is frozen and only the signals are shown.
@@ -205,10 +219,14 @@ class Network:
             for speaker in self.speakers_for(listener):
                 self.trust[listener][speaker] = trust_math.update_trust(
                     self.trust[listener][speaker],
-                    signals[speaker]["exact"], cfg.trust_memory)
+                    signals[listener][speaker]["exact"], cfg.trust_memory)
 
         self.previous_vectors = vectors
-        self.last_scores = {n: signals[n]['exact'] for n in signals}
+        self.last_scores = {
+            listener: {speaker: values["exact"]
+                       for speaker, values in row.items()}
+            for listener, row in signals.items()
+        }
         self.history.append({i: dict(r) for i, r in self.trust.items()})
         return signals
 
@@ -222,7 +240,7 @@ class Network:
         Without this the influence numbers counted peers that had already been
         shut out. Measured with trust_floor 0.45: Agent_A heard only Agent_C,
         yet the liar Agent_B was still credited with 38.8% of A's attention.
-        Since `attacker_influence` is one of the four headline measures, the
+        Since influence is one of the headline measures, the
         defence looked worse than it actually was.
 
         With `trust_floor` at its default of 0 nothing is filtered and this
@@ -281,6 +299,7 @@ class Network:
             log.reply(name, text)
             self._report(name)
         first_answers = {n: self.agents[n].answer for n in self.names}
+        round_answers = [dict(first_answers)]
 
         if recorder:
             recorder.add_round(1, self.agents)
@@ -324,6 +343,8 @@ class Network:
                                             "belief_disagrees", False))
                 changes += changed
 
+            round_answers.append({n: self.agents[n].answer for n in self.names})
+
             # On a frozen question we still SHOW the signals but do not
             # move the trust values.
             signals = (self.update_trust(learn=self.learning)
@@ -349,8 +370,16 @@ class Network:
         # silenced by `trust_floor` no longer counts toward its influence.
         # With the floor at 0 this is the whole table, as before.
         heard = self.heard_trust()
-        scores = metrics.summarise(first_answers, final, heard,
-                                   self.liars, question.answer)
+        scores = metrics.summarise(
+            first_answers, final, heard, self.liars, question.answer,
+            round_answers=round_answers, wrong=wrong,
+            detection_trust=self.trust)
+        if not self.use_trust:
+            # These two evaluate a trust-based detector and are undefined in
+            # the equal-hearing baseline. Reporting a prevalence-derived AUPRC
+            # or a zero-round detection would be misleading.
+            scores["liar_detection_auprc"] = None
+            scores["detection_latency"] = None
         if self.use_trust and self.history:
             scores.update(metrics.formula_report(
                 self.history, self.last_scores, self.liars,
@@ -480,7 +509,9 @@ async def run_network(cfg: Config, recorder=None) -> None:
     # while the agents still answer independently of each other.
     client = make_clients(cfg.model, cfg.provider, cfg.seed, cfg.agents)
     try:
-        if cfg.repeats > 1:
+        if cfg.topologies:
+            await _topology_sweep(cfg, client, recorder)
+        elif cfg.repeats > 1:
             await _repeat(cfg, client, recorder)
         else:
             random.seed(cfg.seed)
@@ -489,6 +520,32 @@ async def run_network(cfg: Config, recorder=None) -> None:
         # One client per agent now, so close them all.
         for one in (client if isinstance(client, (list, tuple)) else [client]):
             await one.close()
+
+
+async def _topology_sweep(cfg: Config, client, recorder=None):
+    """Run one controlled experiment per topology, then compare the six metrics."""
+    from .results import Results
+
+    summaries = {}
+    for kind in cfg.topologies:
+        log.banner(f"TOPOLOGY SWEEP: {kind.upper()}")
+        this_cfg = replace(cfg, topology=kind, topologies=[])
+        names = agent_names(this_cfg.agents)
+        liars = roles.choose_seats(names, this_cfg.attackers,
+                                   this_cfg.attacker_places, kind,
+                                   this_cfg.seed)
+        child = Results(this_cfg, names, liars) if recorder else None
+        random.seed(this_cfg.seed)
+        if this_cfg.repeats > 1:
+            _, summary = await _repeat(this_cfg, client, child)
+        else:
+            _, summary = await _once(this_cfg, client, child)
+        summaries[kind] = summary
+        if recorder:
+            recorder.add_topology(kind, child)
+
+    log.topology_comparison(summaries)
+    return summaries
 
 
 async def _once(cfg: Config, client, recorder):
@@ -555,7 +612,9 @@ async def _repeat(cfg: Config, client, recorder):
         recorder.set_summary(repeat.means_only(combined_right))
         recorder.set_repeats(cfg.repeats, rights, combined_right,
                             lefts or None,
-                            repeat.combine(lefts) if lefts else None)
+                             repeat.combine(lefts) if lefts else None)
+    return (repeat.means_only(combined_left) if lefts else None,
+            repeat.means_only(combined_right))
 
 
 async def _run_all(net, cfg, recorder):
