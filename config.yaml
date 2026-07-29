@@ -56,20 +56,24 @@ embed_model: "nomic-embed-text"   # only used when scoring is "text".
                             # answers the questions.
 
 # ---------------------------------------------------------------- NETWORK
-agents: 4                   # how many agents in total (at least 2)
-rounds: 4                   # round 1 = answer alone, the rest are discussion
-topology: "mesh"            # mesh | bus | star | ring | line | tree | hybrid | p2p
+agents: 7                   # research network size
+rounds: 5                   # round 1 = answer alone, the rest are discussion
+topology: "star"            # used when topologies below is empty
+topologies: []              # controlled sweep example:
+                            # [mesh, star, ring, line, tree, hybrid, p2p]
 share: "answer"             # answer = send the answer only
                             # both   = send the answer and the reasoning
 seed: 1                     # the same seed gives the same run again
 
 # ---------------------------------------------------------------- LIARS
 # A liar is given a wrong answer and told to defend it as its own idea.
-attackers: 1                # how many agents lie. 0 = nobody lies
-attacker_places: "random"   # "random"  = pick their seats at random (uses seed)
+attackers: 3                # 1-2 main study; 3 is the severe 7-agent stress test
+attacker_places: "strategic" # topology-aware, deterministic high-impact seats
+                            # "random"  = pick their seats at random (uses seed)
                             # "0,3"     = use exactly these seats
                             # "center"  = the hub seat (star, tree, hybrid)
                             # "leaf"    = an outer seat
+                            # "strategic" = hub+leaves / center+ends / spread
 attacker_answer: ""         # a fallback wrong answer, used only for questions
                             # that do not set their own "wrong:"
 sleeper: false              # true = behave honestly at first, then start lying
