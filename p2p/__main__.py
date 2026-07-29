@@ -10,7 +10,7 @@ from . import roles
 from .config import SHARE_MODES, load_config
 from .providers import PROVIDERS
 from .network import Network, run_network
-from .results import Results, already_done
+from .results import Results, SweepResults, already_done
 
 # Models write characters like the multiply sign. Make sure Windows can show them.
 for _stream in (sys.stdout, sys.stderr):
@@ -58,12 +58,16 @@ def main() -> None:
 
     recorder = None
     if args.result == "json":
-        # Work out the agent names and who lies, so the file header is right.
-        from .agent import agent_names
-        names = agent_names(cfg.agents)
-        liars = roles.choose_seats(names, cfg.attackers, cfg.attacker_places,
-                                   cfg.topology, cfg.seed)
-        recorder = Results(cfg, names, liars)
+        if cfg.topologies:
+            recorder = SweepResults(cfg)
+        else:
+            # Work out the agent names and who lies, so the file header is right.
+            from .agent import agent_names
+            names = agent_names(cfg.agents)
+            liars = roles.choose_seats(names, cfg.attackers,
+                                       cfg.attacker_places, cfg.topology,
+                                       cfg.seed)
+            recorder = Results(cfg, names, liars)
 
     try:
         asyncio.run(run_network(cfg, recorder))
