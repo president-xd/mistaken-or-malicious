@@ -29,6 +29,18 @@ import math
 from .metrics import AVERAGED
 
 
+# Two-sided 95% Student-t critical values. A t interval is more honest than a
+# normal interval for the small repeat counts used by model experiments.
+_T95 = {
+    1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571,
+    6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
+    11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145, 15: 2.131,
+    16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093, 20: 2.086,
+    21: 2.080, 22: 2.074, 23: 2.069, 24: 2.064, 25: 2.060,
+    26: 2.056, 27: 2.052, 28: 2.048, 29: 2.045, 30: 2.042,
+}
+
+
 def mean(values: list[float]) -> float | None:
     """The plain average. None when there is nothing to average."""
     return sum(values) / len(values) if values else None
@@ -46,6 +58,18 @@ def spread(values: list[float]) -> float | None:
     average = sum(values) / len(values)
     total = sum((v - average) ** 2 for v in values)
     return math.sqrt(total / (len(values) - 1))
+
+
+def confidence_interval_95(values: list[float]) -> tuple[float, float] | None:
+    """Student-t 95% confidence interval for a repeated-run mean."""
+    deviation = spread(values)
+    if deviation is None:
+        return None
+    center = mean(values)
+    df = len(values) - 1
+    critical = _T95.get(df, 1.96 if df > 120 else 2.0)
+    margin = critical * deviation / math.sqrt(len(values))
+    return center - margin, center + margin
 
 
 def combine(runs: list[dict]) -> dict:
@@ -72,6 +96,10 @@ def combine(runs: list[dict]) -> dict:
             "highest": round(max(values), 4),
             "spread": (round(spread(values), 4)
                        if spread(values) is not None else None),
+            "ci95_low": (round(confidence_interval_95(values)[0], 4)
+                         if confidence_interval_95(values) is not None else None),
+            "ci95_high": (round(confidence_interval_95(values)[1], 4)
+                          if confidence_interval_95(values) is not None else None),
             "runs": len(values),
         }
     return out
