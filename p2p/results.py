@@ -142,6 +142,32 @@ class Results:
         return str(path)
 
 
+class SweepResults:
+    """One reproducible file containing a controlled topology sweep."""
+
+    def __init__(self, cfg):
+        self.data = {
+            "settings": {
+                **{f.name: getattr(cfg, f.name)
+                   for f in fields(cfg) if f.name != "questions"},
+            },
+            "topologies": {},
+            "comparison": {},
+        }
+
+    def add_topology(self, kind: str, result: Results) -> None:
+        self.data["topologies"][kind] = result.data
+        self.data["comparison"][kind] = result.data.get("summary", {})
+
+    def save(self, folder="results", run_name="") -> str:
+        Path(folder).mkdir(parents=True, exist_ok=True)
+        name = run_name or f"topology_sweep_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        path = Path(folder) / f"{name}.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.data, f, indent=2, ensure_ascii=False)
+        return str(path)
+
+
 def already_done(run_name: str, folder="results") -> str:
     """Has this run finished before? Returns the file path, or "" if not.
 
@@ -165,10 +191,15 @@ def _round_flat(values):
 
 
 def _judge(without, with_):
-    """Did trust help? Higher is better for two measures, lower for two others."""
+    """Did trust help on each of the six headline research measures?"""
     out = {}
     for key, higher_is_better in (("honest_accuracy", True),
                                   ("attack_success_rate", False),
+                                  ("normalized_attacker_influence", False),
+                                  ("diffusion_reach", False),
+                                  ("liar_detection_auprc", True),
+                                  ("detection_latency", False),
+                                  # Retained for older result readers.
                                   ("trust_separation", True),
                                   ("attacker_influence", False)):
         a, b = without.get(key), with_.get(key)
