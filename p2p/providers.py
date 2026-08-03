@@ -157,6 +157,11 @@ def make_client(provider: str, model: str, seed: int | None = None):
             base_url=DEEPSEEK_URL,
             api_key=deepseek_key(),
             model_info=_PLAIN_TEXT,
+            # Reasoning responses can legitimately take several minutes under
+            # concurrent load. The library default timed out completed work and
+            # forced whole 100-question scenarios to restart.
+            timeout=600.0,
+            max_retries=3,
             **extra,
         )
     if provider == "ollama":
