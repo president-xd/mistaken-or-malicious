@@ -515,7 +515,11 @@ async def run_network(cfg: Config, recorder=None) -> None:
             await _repeat(cfg, client, recorder)
         else:
             random.seed(cfg.seed)
-            await _once(cfg, client, recorder)
+            # Only this branch may checkpoint and resume. A sweep or a set of
+            # repeats writes many runs into one recorder, so "how far did we
+            # get" is not a single number and a half-restored file would mix
+            # two experiments together.
+            await _once(cfg, client, recorder, resumable=True)
     finally:
         # One client per agent now, so close them all.
         for one in (client if isinstance(client, (list, tuple)) else [client]):
@@ -548,7 +552,7 @@ async def _topology_sweep(cfg: Config, client, recorder=None):
     return summaries
 
 
-async def _once(cfg: Config, client, recorder):
+async def _once(cfg: Config, client, recorder, resumable=False):
     """Run the chosen experiment exactly once.
 
     Gives back the two summaries as (left, right). `left` is None for a plain
@@ -562,10 +566,12 @@ async def _once(cfg: Config, client, recorder):
 
     net = Network(cfg, client)
     log.session(cfg, net.names, net.liars, net.adjacency, net.use_trust)
-    await _run_all(net, cfg, recorder)
+    failed = await _run_all(net, cfg, recorder, resumable)
     summary = metrics.average_runs(net.rows)
     if recorder:
         recorder.set_summary(summary)
+        if resumable:
+            recorder.mark_complete(failed)
     return None, summary
 
 
@@ -617,13 +623,135 @@ async def _repeat(cfg: Config, client, recorder):
             repeat.means_only(combined_right))
 
 
-async def _run_all(net, cfg, recorder):
-    """Warm up if asked, then run and score the remaining questions."""
+def _restore(net, cfg, recorder):
+    """Carry on from an unfinished run of this name. Returns (done, failed).
+
+    Returns (0, []) when there is nothing to resume, which is the normal case.
+    """
+    from .results import load_checkpoint
+
+    data = load_checkpoint(cfg.run_name)
+    if not data:
+        return 0, []
+
+    # Refuse to put two different experiments in one file. Resuming into a
+    # checkpoint written under other settings would produce a result matching
+    # neither config, and nothing in the file would say so afterwards.
+    saved = data.get("settings", {})
+    current = recorder.data.get("settings", {})
+    changed = sorted(k for k in set(saved) | set(current)
+                     if saved.get(k) != current.get(k))
+    if changed:
+        raise SystemExit(
+            f"\nThere is an unfinished run called {cfg.run_name!r}, but it was "
+            f"started with different settings:\n"
+            f"  {', '.join(changed)}\n"
+            f"Resuming would mix two experiments in one file. Give this run a "
+            f"new `run_name`, or delete results/{cfg.run_name}.json to start "
+            f"it again from the beginning.")
+
+    progress = data.get("progress", {})
+    done = int(progress.get("questions_done") or 0)
+    if done <= 0:
+        return 0, []
+
+    recorder.adopt(data)
+    # Trust and the scored rows are the run's memory. Without both, a resumed
+    # run would start trusting everyone again and would report its summary
+    # over only the questions asked after the restart.
+    saved_trust = progress.get("trust")
+    if saved_trust:
+        net.trust = {a: dict(row) for a, row in saved_trust.items()}
+    saved_rows = progress.get("rows")
+    if saved_rows:
+        net.rows = list(saved_rows)
+    failed = list(progress.get("failed_questions", []))
+
+    log.banner(f"RESUMING: {cfg.run_name}\n"
+               f"{done} question(s) already answered - carrying on from "
+               f"question {done + 1}.\n"
+               f"Trust and scores are restored, so this stays one experiment.")
+    return done, failed
+
+
+def _is_permanent(exc) -> bool:
+    """Is this an error that every later question would hit too?
+
+    A timeout or a rate limit is bad luck and the next question may well be
+    fine. A rejected key or an empty account is not: retrying it 100 times
+    turns one clear failure into a hundred silent ones, and hides the single
+    sentence the user actually needs to read.
+    """
+    status = getattr(exc, "status_code", None)
+    if status in (401, 402, 403):
+        return True
+    text = str(exc).lower()
+    return any(k in text for k in (
+        "insufficient balance", "unauthorized", "invalid api key",
+        "authentication", "error code: 401", "error code: 402",
+        "error code: 403"))
+
+
+async def _question_with_retry(net, cfg, question, recorder) -> bool:
+    """Run one question, giving it a second chance. True if it finished.
+
+    A single timed-out call used to end the whole experiment. The results file
+    is written as the run goes now, but that only helps if one bad minute
+    stops costing every question that came after it, so a failure here is
+    retried once and then recorded as missing rather than raised.
+    """
+    last = None
+    for attempt in (1, 2):
+        if recorder:
+            recorder.start_question(question.text, question.answer)
+        try:
+            await net.run_question(question, recorder)
+            return True
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            raise                      # the user asked to stop; let it stop
+        except Exception as exc:       # noqa: BLE001 - no provider error ends the run
+            last = exc
+            if recorder:
+                recorder.discard_question()
+            # A dead key or an empty account will reject every remaining
+            # question in exactly the same way. Stop now so the caller can say
+            # so plainly; the questions already finished stay checkpointed.
+            if _is_permanent(exc):
+                log.warn("run", "the provider rejected this outright - stopping "
+                                "rather than failing every remaining question")
+                raise
+            if attempt == 1:
+                log.warn("question", f"failed ({type(exc).__name__}: {exc}) "
+                                     f"- trying it once more")
+                await net.reset_agents()
+
+    log.warn("question", f"failed twice - recorded as missing, moving on: {last}")
+    if recorder:
+        recorder.record_failed_question(question.text, question.answer, last)
+    return False
+
+
+async def _run_all(net, cfg, recorder, resumable=False):
+    """Warm up if asked, then run and score the remaining questions.
+
+    Returns the list of question numbers that could not be completed.
+    """
     questions = list(cfg.questions)
+
+    # Work out where to start BEFORE the warm-up, because a resumed run must
+    # not pay for the warm-up twice.
+    done, failed = 0, []
+    if resumable and recorder:
+        done, failed = _restore(net, cfg, recorder)
 
     # The warm-up questions are used only to set starting trust, then dropped.
     if cfg.warmup > 0:
-        if net.use_trust:
+        if done > 0:
+            # The warm-up exists only to set starting trust, and the restored
+            # trust table already holds its effect. Running it again would
+            # spend the calls and then be overwritten by the restore.
+            log.info("resuming: skipping the warm-up, its trust is already restored")
+        elif net.use_trust:
             await net.warm_up(questions[:cfg.warmup])
         else:
             # The baseline has no trust to warm up, but it must still SKIP these
@@ -640,6 +768,8 @@ async def _run_all(net, cfg, recorder):
         log.info(schedule.describe(plan, cfg.trust_learn_on))
 
     for i, question in enumerate(questions, start=1):
+        if i <= done:
+            continue                   # already answered before the interruption
         if i > 1:
             await net.reset_agents()
         # A sleeper wakes up part-way through and starts lying.
@@ -647,9 +777,23 @@ async def _run_all(net, cfg, recorder):
             net.asleep = False
             log.banner("THE SLEEPER WAKES UP - it now defends a WRONG answer")
         net.learning = (plan[i - 1] == "learn")
-        if recorder:
-            recorder.start_question(question.text, question.answer)
-        await net.run_question(question, recorder)
+
+        if not await _question_with_retry(net, cfg, question, recorder):
+            failed.append(i)
+
+        # Save after every question. The file used to be written once, at the
+        # very end, so anything that went wrong on question 87 threw away the
+        # 86 questions already paid for.
+        done = i
+        if resumable and recorder:
+            recorder.mark_progress(done, net.trust, net.rows, failed)
+            recorder.checkpoint(run_name=cfg.run_name)
+
+    if failed:
+        log.warn("run", f"{len(failed)} question(s) could not be completed: "
+                        f"{', '.join(str(n) for n in failed)}. They are marked "
+                        f"'failed' in the results file and are not scored.")
+    return failed
 
 
 async def _compare(cfg, client, recorder):
