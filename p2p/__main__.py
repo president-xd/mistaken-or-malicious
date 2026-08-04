@@ -72,6 +72,18 @@ def main() -> None:
     try:
         asyncio.run(run_network(cfg, recorder))
     except Exception as exc:  # noqa: BLE001 - give a clear hint for the usual cause
+        # Questions finished before this point are already on disk, saved as
+        # the run went. Say so, because the old behaviour was to lose them and
+        # people learned to expect that.
+        if recorder and cfg.run_name:
+            from .results import load_checkpoint
+            saved = load_checkpoint(cfg.run_name)
+            if saved:
+                n = saved.get("progress", {}).get("questions_done", 0)
+                print(f"\n[SAVED] {n} question(s) were written to "
+                      f"results/{cfg.run_name}.json before this failure.\n"
+                      f"        Run the same command again to carry on from "
+                      f"question {n + 1}.")
         text = str(exc).lower()
         if cfg.provider == "deepseek" and any(
                 k in text for k in ("401", "403", "unauthorized", "api key")):
@@ -95,6 +107,14 @@ def main() -> None:
     if recorder:
         path = recorder.save(run_name=cfg.run_name)
         print(f"\nResults saved to: {path}")
+        # A run that lost questions still saves. Say so here rather than only
+        # in the file, so nobody quotes a 100-question result that is really 98.
+        missing = recorder.data.get("progress", {}).get("failed_questions", [])
+        if missing:
+            print(f"[WARNING] {len(missing)} question(s) failed and are NOT "
+                  f"scored: {', '.join(str(n) for n in missing)}\n"
+                  f"          They are marked 'failed' in the file. Delete it "
+                  f"and run again if you need all of them.")
 
 
 if __name__ == "__main__":
