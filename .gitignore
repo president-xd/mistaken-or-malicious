@@ -6,7 +6,7 @@ __pycache__/
 
 # Generated experiment output. Keep research configurations in Git, but do
 # not publish paid API transcripts, interrupted-run logs, or derived results.
-results/*.json
+
 results/*.log
 results/scenario-logs/
 results/interrupted_*/
