@@ -16,7 +16,7 @@ credit without adding topology evidence.
 
 Every configuration uses:
 
-- 100 questions from `data/tricky_questions_100.yaml`
+- 50 questions from `data/tricky_questions_50.yaml`
 - 7 agents
 - 5 discussion rounds per question
 - dynamic trust enabled
@@ -34,4 +34,3 @@ seven agents concurrently, so at most 21 API requests may be in flight. It
 saves one JSON result per configuration in `results/`, writes diagnostic logs
 to `results/scenario-logs/`, retries temporary API failures, and skips finished
 results so an interrupted batch can be resumed safely.
-

@@ -1,10 +1,10 @@
 # Mesh representative: 2 malicious agents at Agent_A and Agent_B.
 # Symmetry class: every pair of mesh seats is equivalent, so this file represents all 21 possible two-liar placements (orbit size 21).
 # Placement: both malicious agents hear each other and all five honest agents; any other pair has the same graph structure.
-# Controls: 7 total agents, 100 questions, 5 rounds per question, and dynamic trust enabled.
+# Controls: 7 total agents, 50 questions, 5 rounds per question, and dynamic trust enabled.
 # Model: DeepSeek V4 Pro in default thinking mode, the current DeepSeek Reasoner replacement.
-questions_file: "data/tricky_questions_100.yaml"
-max_questions: 100
+questions_file: "data/tricky_questions_50.yaml"
+max_questions: 50
 provider: "deepseek"
 model: "deepseek-v4-pro"
 embed_model: "nomic-embed-text"
@@ -37,7 +37,7 @@ agreeableness: ""
 persuasion: ""
 parallel: true
 repeats: 1
-run_name: "mesh_liars-2_seats-A-B"
+run_name: "mesh50_liars-2_seats-A-B"
 skip_done: true
 compare_baseline: false
 network_vs_network: false

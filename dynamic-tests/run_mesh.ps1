@@ -72,7 +72,21 @@ try {
                 continue
             }
 
-            if ($item.Process.ExitCode -ne 0) {
+            # On Windows, HasExited can become true before the Process object
+            # has populated ExitCode. Waiting here is immediate for an exited
+            # child and prevents a successful run from being treated as a
+            # failure with a null/stale exit code.
+            $item.Process.WaitForExit()
+            $item.Process.Refresh()
+
+            $stdoutText = ""
+            if (Test-Path -LiteralPath $item.Stdout) {
+                $stdoutText = Get-Content -LiteralPath $item.Stdout -Raw
+            }
+            $reportedSuccess = $stdoutText -match "(?m)^\[SKIP\]" -or
+                $stdoutText -match "Results saved to:"
+
+            if ($item.Process.ExitCode -ne 0 -and -not $reportedSuccess) {
                 $details = ""
                 if (Test-Path -LiteralPath $item.Stderr) {
                     $details = Get-Content -LiteralPath $item.Stderr -Raw
@@ -106,4 +120,3 @@ catch {
 }
 
 Write-Host "All three mesh scenarios are complete. Results are in: $results"
-
