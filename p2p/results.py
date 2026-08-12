@@ -10,6 +10,8 @@ One file per run, written to the `results` folder.
 from __future__ import annotations
 
 import json
+import time
+import uuid
 from dataclasses import fields
 from datetime import datetime
 from pathlib import Path
@@ -220,10 +222,25 @@ class Results:
         # after every question now, so a crash lands mid-write sooner or later;
         # without this the next attempt would find a truncated file that is
         # neither a finished run nor something it can resume from.
-        tmp = path.with_name(path.name + ".tmp")
+        tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=2, ensure_ascii=False)
-        tmp.replace(path)
+        # Windows can briefly lock the destination while another process reads
+        # it or while the filesystem is settling after a prior checkpoint.
+        # Retry a few times instead of losing the already-finished questions.
+        last_error = None
+        for delay in (0.05, 0.1, 0.2, 0.4, 0.8):
+            try:
+                tmp.replace(path)
+                return str(path)
+            except PermissionError as error:
+                last_error = error
+                time.sleep(delay)
+        try:
+            tmp.replace(path)
+        except PermissionError as error:
+            last_error = error
+            raise last_error
         return str(path)
 
     def checkpoint(self, folder="results", run_name="") -> str:
