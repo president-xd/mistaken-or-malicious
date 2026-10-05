@@ -182,7 +182,7 @@ class TestEmptyExperimentWarning(unittest.TestCase):
 
     def test_warns_when_nobody_was_ever_turned(self):
         text = self.show(self.side(), self.side(trust_separation=0.6))
-        self.assertIn("measured nothing", text)
+        self.assertIn("no decision or diffusion damage", text)
 
     def test_stays_quiet_when_the_attack_worked(self):
         text = self.show(self.side(),

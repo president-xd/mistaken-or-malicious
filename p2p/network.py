@@ -242,7 +242,11 @@ class Network:
                 trim=getattr(cfg, "share_trim", 1),
                 liars=set(self.liars),
                 attacker_reports=getattr(cfg, "attacker_reports", "truthful"))
-            self.trust = effective
+            self.trust = {
+                listener: {target: value for target, value in row.items()
+                           if target in self.adjacency[listener]}
+                for listener, row in effective.items()
+            }
             self.trust_log.append({
                 "reports": reports,
                 "G": group,
