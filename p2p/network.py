@@ -42,6 +42,7 @@ class Network:
         self.names = list(agents) if agents else agent_names(cfg.agents)
         self.adjacency = topology.build(cfg.topology, self.names)
         self.use_trust = cfg.trust if force_trust is None else force_trust
+        self.show_trust = self.use_trust and cfg.trust_share != "off"
 
         # Decide who lies. `all_liars` is used by the network-vs-network mode.
         if all_liars:
@@ -68,8 +69,10 @@ class Network:
                 name, client_for(i),
                 role="liar" if name in self.liars else "honest",
                 wrong_answer=cfg.attacker_answer,
-                agreeableness=cfg.trait_for(i, "agreeableness"),
-                persuasion=cfg.trait_for(i, "persuasion"))
+                agreeableness=cfg.trait_for_role(
+                    i, "liar" if name in self.liars else "honest", "agreeableness"),
+                persuasion=cfg.trait_for_role(
+                    i, "liar" if name in self.liars else "honest", "persuasion"))
             for i, name in enumerate(self.names)
         }
 
@@ -107,7 +110,7 @@ class Network:
     def heard_by(self, name: str) -> list[str]:
         """Who this agent can hear, after the trust floor removes distrusted peers."""
         peers = self.adjacency[name]
-        if self.use_trust and self.cfg.trust_floor > 0:
+        if self.show_trust and self.cfg.trust_floor > 0:
             peers = [p for p in peers if self.trust[name][p] >= self.cfg.trust_floor]
         return peers
 
@@ -318,14 +321,14 @@ class Network:
             before = {n: dict(self.agents[n].belief) for n in self.names}
             for name in self.names:
                 log.hearing(name, hears[name],
-                            self.trust[name] if self.use_trust else None)
+                            self.trust[name] if self.show_trust else None)
 
             log.working(self.names, cfg.parallel)
             # Hand each agent its own trust row, so it can weigh peers by it.
             replies = await self._all(
                 lambda n: self.agents[n].reconsider(
                     question.text, hears[n],
-                    self.trust[n] if self.use_trust else None))
+                    self.trust[n] if self.show_trust else None))
 
             changes = 0
             for name, (text, changed, by) in zip(self.names, replies):
@@ -357,12 +360,6 @@ class Network:
                 recorder.add_round(r, self.agents, self.trust if self.use_trust else None,
                                    signals, self.influence() if self.use_trust else None)
 
-            # Stop early if nobody moved. We only do this when trust is OFF:
-            # trust keeps changing after answers settle, and it needs the full
-            # number of rounds to separate a liar from the honest agents.
-            if changes == 0 and not self.use_trust:
-                log.info("No agent changed its mind - network is stable. Stopping early.")
-                break
 
         # Score it.
         final = {n: self.agents[n].answer for n in self.names}
@@ -374,12 +371,6 @@ class Network:
             first_answers, final, heard, self.liars, question.answer,
             round_answers=round_answers, wrong=wrong,
             detection_trust=self.trust)
-        if not self.use_trust:
-            # These two evaluate a trust-based detector and are undefined in
-            # the equal-hearing baseline. Reporting a prevalence-derived AUPRC
-            # or a zero-round detection would be misleading.
-            scores["liar_detection_auprc"] = None
-            scores["detection_latency"] = None
         if self.use_trust and self.history:
             scores.update(metrics.formula_report(
                 self.history, self.last_scores, self.liars,
@@ -505,15 +496,15 @@ async def run_network(cfg: Config, recorder=None) -> None:
     """Run everything the config asks for."""
     # Fail now if the provider cannot work at all, rather than half a run in.
     providers.check_ready(cfg.provider)
-    # One client per agent, each with its own seed, so the run repeats exactly
-    # while the agents still answer independently of each other.
-    client = make_clients(cfg.model, cfg.provider, cfg.seed, cfg.agents)
+    client = None
     try:
         if cfg.topologies:
+            client = make_clients(cfg.model, cfg.provider, cfg.seed, cfg.agents)
             await _topology_sweep(cfg, client, recorder)
         elif cfg.repeats > 1:
-            await _repeat(cfg, client, recorder)
+            await _repeat(cfg, recorder)
         else:
+            client = make_clients(cfg.model, cfg.provider, cfg.seed, cfg.agents)
             random.seed(cfg.seed)
             # Only this branch may checkpoint and resume. A sweep or a set of
             # repeats writes many runs into one recorder, so "how far did we
@@ -522,8 +513,9 @@ async def run_network(cfg: Config, recorder=None) -> None:
             await _once(cfg, client, recorder, resumable=True)
     finally:
         # One client per agent now, so close them all.
-        for one in (client if isinstance(client, (list, tuple)) else [client]):
-            await one.close()
+        if client is not None:
+            for one in (client if isinstance(client, (list, tuple)) else [client]):
+                await one.close()
 
 
 async def _topology_sweep(cfg: Config, client, recorder=None):
@@ -541,7 +533,7 @@ async def _topology_sweep(cfg: Config, client, recorder=None):
         child = Results(this_cfg, names, liars) if recorder else None
         random.seed(this_cfg.seed)
         if this_cfg.repeats > 1:
-            _, summary = await _repeat(this_cfg, client, child)
+            _, summary = await _repeat(this_cfg, child)
         else:
             _, summary = await _once(this_cfg, client, child)
         summaries[kind] = summary
@@ -575,7 +567,7 @@ async def _once(cfg: Config, client, recorder, resumable=False):
     return None, summary
 
 
-async def _repeat(cfg: Config, client, recorder):
+async def _repeat(cfg: Config, recorder):
     """Run the WHOLE experiment several times and report the average.
 
     Each repeat gets its own seed, so the liars sit in different seats and the
@@ -593,11 +585,16 @@ async def _repeat(cfg: Config, client, recorder):
     for i in range(cfg.repeats):
         seed = cfg.seed + i
         this_run = replace(cfg, seed=seed)
+        clients = make_clients(cfg.model, cfg.provider, seed, cfg.agents)
         random.seed(seed)
         log.repeat_header(i + 1, cfg.repeats, seed)
         if recorder:
             recorder.start_repeat(i + 1, seed)
-        left, right = await _once(this_run, client, recorder)
+        try:
+            left, right = await _once(this_run, clients, recorder)
+        finally:
+            for client in clients:
+                await client.close()
         if left is not None:
             lefts.append(left)
         rights.append(right)

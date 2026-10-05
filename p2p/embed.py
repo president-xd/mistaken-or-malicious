@@ -69,6 +69,9 @@ class ExactMatch:
         if not words:
             return None
         for seen in self._slots:
+            if key in {"a", "b", "c", "d", "e"} or seen in {"a", "b", "c", "d", "e"}:
+                if key != seen:
+                    continue
             other = set(seen.split())
             if other and (words <= other or other <= words):
                 return seen

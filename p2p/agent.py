@@ -278,6 +278,7 @@ class PeerAgent:
         self.answer = ""
         self.belief = {}
         self.reasoning = ""
+        self._candidates = []
 
     async def solve(self, question: str) -> str:
         """Phase 1: answer independently, having heard no peer yet."""

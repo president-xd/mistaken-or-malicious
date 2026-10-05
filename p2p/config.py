@@ -73,6 +73,7 @@ class Config:
     trust_floor: float = 0.0
     trust_carry_over: bool = True
     sharpen: bool = True
+    trust_share: str = "broadcast"
 
     # --- warm-up and learning schedule ---
     warmup: int = 0
@@ -84,6 +85,8 @@ class Config:
     # --- traits (optional, off by default) ---
     agreeableness: str = ""
     persuasion: str = ""
+    honest_agreeableness: str = "high"
+    liar_persuasion: str = "high"
 
     # --- running ---
     parallel: bool = True
@@ -105,6 +108,16 @@ class Config:
         text = self.agreeableness if which == "agreeableness" else self.persuasion
         levels = [p.strip().lower() for p in text.split(",") if p.strip()]
         return levels[index] if index < len(levels) else ""
+
+    def trait_for_role(self, index: int, role: str, which: str) -> str:
+        legacy = self.trait_for(index, which)
+        if legacy:
+            return legacy
+        if role == "honest" and which == "agreeableness":
+            return self.honest_agreeableness
+        if role == "liar" and which == "persuasion":
+            return self.liar_persuasion
+        return ""
 
 
 def _read_questions(raw) -> list[Question]:
@@ -247,6 +260,7 @@ def load_config(path: str, share: str | None = None,
         trust_floor=float(raw.get("trust_floor", 0.0)),
         trust_carry_over=bool(raw.get("trust_carry_over", True)),
         sharpen=bool(raw.get("sharpen", True)),
+        trust_share=str(raw.get("trust_share", "broadcast")).lower(),
         warmup=int(raw.get("warmup", 0)),
         trust_gamma=float(raw.get("trust_gamma", 2.0)),
         trust_learn_on=str(raw.get("trust_learn_on", "all")).lower(),
@@ -254,6 +268,8 @@ def load_config(path: str, share: str | None = None,
         hear_yourself=bool(raw.get("hear_yourself", False)),
         agreeableness=str(raw.get("agreeableness", "")),
         persuasion=str(raw.get("persuasion", "")),
+        honest_agreeableness=str(raw.get("honest_agreeableness", "high")),
+        liar_persuasion=str(raw.get("liar_persuasion", "high")),
         parallel=bool(raw.get("parallel", True)),
         run_name=str(raw.get("run_name", "")),
         results_dir=str(raw.get("results_dir", "results")),
@@ -279,6 +295,8 @@ def _check(cfg: Config, path: str) -> None:
         stop("'repeats' must be at least 1.")
     if cfg.share not in SHARE_MODES:
         stop(f"'share' must be one of: {', '.join(SHARE_MODES)}")
+    if cfg.trust_share not in ("off", "broadcast"):
+        stop("'trust_share' must be 'off' or 'broadcast'.")
     if cfg.provider not in providers.PROVIDERS:
         stop(f"'provider' must be one of: {', '.join(providers.PROVIDERS)}")
     if not cfg.model:

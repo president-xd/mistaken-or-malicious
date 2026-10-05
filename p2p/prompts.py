@@ -99,7 +99,9 @@ def solve(question):
     """Round 1 for an honest agent: answer alone, having heard nobody."""
     return (
         f"Solve this question on your own:\n{question}\n\n"
-        "Show brief reasoning. Then finish with this line, with NOTHING "
+        "Show brief reasoning. Then give a BELIEF line as one-line JSON with "
+        "your probability for each answer you considered. Then finish with "
+        "this line, with NOTHING "
         f"after it:\n{ANSWER_LINE}"
     )
 
