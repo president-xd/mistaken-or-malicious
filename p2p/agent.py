@@ -16,7 +16,7 @@ import re
 from autogen_agentchat.agents import AssistantAgent
 from autogen_core import CancellationToken
 
-from . import prompts, providers
+from . import letters, prompts, providers
 
 # Kept for older code that imported it. The real text lives in prompts.py.
 PERSONA = prompts.HONEST
@@ -48,9 +48,6 @@ _SHORT_ANSWER = 60      # hard cap on anything we salvage from prose
 # Sent ALONE when the model forgot its ANSWER line. Re-sending the whole question
 # just reproduces the same failure, so instead we ask only for the missing line --
 # the agent still has its own reply in context and only has to name its verdict.
-_RETRY_NUDGE = prompts.RETRY
-
-
 def _salvage(text: str) -> str:
     """Best-effort answer when the model omitted its ANSWER line even after a retry.
 
@@ -230,10 +227,13 @@ class PeerAgent:
 
     def __init__(self, name: str, client,
                  role: str = "honest", wrong_answer: str = "",
-                 agreeableness: str = "", persuasion: str = ""):
+                 wrong_text: str = "", agreeableness: str = "",
+                 persuasion: str = "", answer_format: str = "free"):
         self.name = name
         self.role = role           # "honest" or "liar"
         self.wrong_answer = wrong_answer   # the answer a liar must defend
+        self.wrong_text = wrong_text
+        self.answer_format = answer_format
         self.agreeableness = agreeableness  # how easily it changes its mind
         self.persuasion = persuasion        # how hard it pushes its view
         self.answer = ""       # current one-line answer (the ANSWER: value)
@@ -268,7 +268,8 @@ class PeerAgent:
             self.retried = True
             # Ask ONLY for the missing line, then absorb both together so the
             # original reasoning is kept and the verdict comes from the follow-up.
-            text = f"{text}\n{await self._run(_RETRY_NUDGE)}"
+            text = f"{text}\n{await self._run(prompts.retry(
+                getattr(self, "answer_format", "free")))}"
             self._absorb(text)
         return text
 
@@ -283,8 +284,9 @@ class PeerAgent:
     async def solve(self, question: str) -> str:
         """Phase 1: answer independently, having heard no peer yet."""
         if self.lies and self.wrong_answer:
-            return await self._ask(prompts.solve_as_liar(question, self.wrong_answer))
-        return await self._ask(prompts.solve(question))
+            return await self._ask(prompts.solve_as_liar(
+                question, self.wrong_answer, self.answer_format, self.wrong_text))
+        return await self._ask(prompts.solve(question, self.answer_format))
 
     def argument(self) -> str:
         """This peer's OWN reasoning, ready to share with neighbours.
@@ -333,7 +335,8 @@ class PeerAgent:
         # the worked example out of the answers actually in play. A fixed
         # example got copied verbatim and the belief was then discarded.
         text = await self._ask(
-            write(question, previous, peers, self._candidates, note))
+            write(question, previous, peers, self._candidates, note,
+                self.answer_format))
         self._absorb(text)
         # Compare normalized: "Yes" -> "yes." is NOT a change of mind.
         changed = _norm(self.answer) != _norm(previous)
@@ -349,7 +352,10 @@ class PeerAgent:
         self.reasoning = text
         hits = _ANSWER_RE.findall(text)
         if hits:
-            self.answer = _condense(hits[-1].strip(_TRIM), text)
+            value = hits[-1].strip(_TRIM)
+            canonical = (letters.canonical_letter(value)
+                         if getattr(self, "answer_format", "free") == "letter" else "")
+            self.answer = canonical or _condense(value, text)
             # An ANSWER line holding a whole sentence ("It is incorrect to
             # classify a hot dog as a sandwich") is not a comparable verdict --
             # two agents that both mean "no" would never be seen to agree. Treat
@@ -358,7 +364,10 @@ class PeerAgent:
         else:
             self.parsed = False
             if not self.answer:  # no ANSWER line at all on the very first turn
-                self.answer = _salvage(text)
+                value = _salvage(text)
+                self.answer = (letters.canonical_letter(value)
+                               if getattr(self, "answer_format", "free") == "letter"
+                               else value)
         # Otherwise keep the previous answer -- but the caller WARNs, because a
         # real change may have been stated in prose we could not read.
 

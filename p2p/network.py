@@ -69,6 +69,7 @@ class Network:
                 name, client_for(i),
                 role="liar" if name in self.liars else "honest",
                 wrong_answer=cfg.attacker_answer,
+                answer_format=cfg.answer_format,
                 agreeableness=cfg.trait_for_role(
                     i, "liar" if name in self.liars else "honest", "agreeableness"),
                 persuasion=cfg.trait_for_role(
@@ -312,6 +313,7 @@ class Network:
         for name in self.liars:
             self.agents[name].wrong_answer = (
                 question.answer if self.asleep else wrong)
+            self.agents[name].wrong_text = "" if self.asleep else question.wrong_text
         if self.asleep:
             log.info(f"{'sleeper' if len(self.liars) == 1 else 'sleepers'} still "
                      f"asleep - defending the CORRECT answer to build trust")

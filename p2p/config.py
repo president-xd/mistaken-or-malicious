@@ -32,6 +32,9 @@ class Question:
     text: str
     answer: str = ""
     wrong: str = ""
+    id: str = ""
+    category: str = ""
+    wrong_text: str = ""
 
 
 @dataclass
@@ -65,6 +68,7 @@ class Config:
     # --- dynamic trust ---
     trust: bool = False
     scoring: str = "answer"
+    answer_format: str = "free"
     start_trust: float = 0.5
     trust_memory: float = 0.8
     weight_agree: float = 1 / 3
@@ -138,10 +142,14 @@ def _read_questions(raw) -> list[Question]:
             text = str(item.get("text", "")).strip()
             answer = str(item.get("answer", "")).strip()
             wrong = str(item.get("wrong", "")).strip()
+            question_id = str(item.get("id", "")).strip()
+            category = str(item.get("category", "")).strip()
+            wrong_text = str(item.get("wrong_text", "")).strip()
         else:
             text, answer, wrong = str(item).strip(), "", ""
+            question_id = category = wrong_text = ""
         if text:
-            out.append(Question(text, answer, wrong))
+            out.append(Question(text, answer, wrong, question_id, category, wrong_text))
     return out
 
 
@@ -164,7 +172,10 @@ def _read_questions_file(path: str) -> list[Question]:
 
     out = [Question(str(i.get("text", "")).strip(),
                     str(i.get("answer", "")).strip(),
-                    str(i.get("wrong", "")).strip())
+                    str(i.get("wrong", "")).strip(),
+                    str(i.get("id", "")).strip(),
+                    str(i.get("category", "")).strip(),
+                    str(i.get("wrong_text", "")).strip())
            for i in items if isinstance(i, dict) and i.get("text")]
     if not out:
         raise SystemExit(f"config error: no questions found in {path}")
@@ -255,6 +266,7 @@ def load_config(path: str, share: str | None = None,
         sleeper=bool(raw.get("sleeper", False)),
         trust=bool(raw.get("trust", False)),
         scoring=str(raw.get("scoring", "answer")).lower(),
+        answer_format=str(raw.get("answer_format", "free")).lower(),
         start_trust=float(raw.get("start_trust", 0.5)),
         trust_memory=float(raw.get("trust_memory", 0.8)),
         weight_agree=float(raw.get("weight_agree", 1 / 3)),
@@ -315,6 +327,8 @@ def _check(cfg: Config, path: str) -> None:
         stop("'model' is empty. Name the model to use.")
     if cfg.scoring not in SCORING_MODES:
         stop(f"'scoring' must be one of: {', '.join(SCORING_MODES)}")
+    if cfg.answer_format not in ("letter", "free"):
+        stop("'answer_format' must be 'letter' or 'free'.")
     if cfg.topology not in topology.available():
         stop(f"unknown topology '{cfg.topology}'. "
              f"choose one of: {', '.join(topology.available())}")

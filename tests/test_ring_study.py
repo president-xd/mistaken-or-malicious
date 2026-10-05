@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from p2p import prompts
+from p2p import letters, prompts
 from p2p.config import Config
 from p2p.embed import ExactMatch
 from p2p.gossip import aggregate_trust
@@ -11,6 +11,15 @@ from tools.validate_questions import validate
 
 
 class TestRingStudyFixes(unittest.TestCase):
+    def test_letter_forms_canonicalize(self):
+        for value in ("C) 42", "C = 42", "Option C", "The answer is C"):
+            self.assertEqual(letters.canonical_letter(value), "C")
+
+    def test_liar_prompt_uses_wrong_text_but_letter_answer(self):
+        prompt = prompts.solve_as_liar("Q", "C", "letter", "forty-two")
+        self.assertIn("C) forty-two", prompt)
+        self.assertTrue(prompt.rstrip().endswith("ANSWER: C"))
+
     def test_round_one_prompt_requests_belief(self):
         self.assertIn("BELIEF", prompts.solve("Q"))
 

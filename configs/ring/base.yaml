@@ -5,6 +5,7 @@ topology: ring
 rounds: 5
 share: both
 scoring: answer
+answer_format: letter
 warmup: 0
 trust: true
 trust_share: off
