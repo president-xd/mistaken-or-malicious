@@ -630,7 +630,7 @@ def _restore(net, cfg, recorder):
     """
     from .results import load_checkpoint
 
-    data = load_checkpoint(cfg.run_name)
+    data = load_checkpoint(cfg.run_name, cfg.results_dir)
     if not data:
         return 0, []
 
@@ -787,7 +787,7 @@ async def _run_all(net, cfg, recorder, resumable=False):
         done = i
         if resumable and recorder:
             recorder.mark_progress(done, net.trust, net.rows, failed)
-            recorder.checkpoint(run_name=cfg.run_name)
+            recorder.checkpoint(folder=cfg.results_dir, run_name=cfg.run_name)
 
     if failed:
         log.warn("run", f"{len(failed)} question(s) could not be completed: "

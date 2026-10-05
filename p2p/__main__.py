@@ -50,7 +50,7 @@ def main() -> None:
 
     # If this run has already finished, do not do it again. Needs `run_name`.
     if cfg.skip_done:
-        done = already_done(cfg.run_name)
+        done = already_done(cfg.run_name, cfg.results_dir)
         if done:
             print(f"[SKIP] This run is already finished: {done}\n"
                   f"       Set skip_done: false, or change run_name, to run it again.")
@@ -77,7 +77,7 @@ def main() -> None:
         # people learned to expect that.
         if recorder and cfg.run_name:
             from .results import load_checkpoint
-            saved = load_checkpoint(cfg.run_name)
+            saved = load_checkpoint(cfg.run_name, cfg.results_dir)
             if saved:
                 n = saved.get("progress", {}).get("questions_done", 0)
                 print(f"\n[SAVED] {n} question(s) were written to "
@@ -105,7 +105,7 @@ def main() -> None:
         raise
 
     if recorder:
-        path = recorder.save(run_name=cfg.run_name)
+        path = recorder.save(folder=cfg.results_dir, run_name=cfg.run_name)
         print(f"\nResults saved to: {path}")
         # A run that lost questions still saves. Say so here rather than only
         # in the file, so nobody quotes a 100-question result that is really 98.

@@ -1,0 +1,17 @@
+provider: deepseek
+model: deepseek-v4-pro
+agents: 7
+topology: ring
+rounds: 5
+share: both
+scoring: answer
+warmup: 0
+trust: true
+trust_carry_over: true
+trust_learn_on: all
+questions_file: data/questions_test_50.jsonl
+repeats: 3
+seed: 1
+skip_done: true
+sleeper: false
+compare_baseline: false

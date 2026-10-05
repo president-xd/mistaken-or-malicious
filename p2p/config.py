@@ -88,6 +88,7 @@ class Config:
     # --- running ---
     parallel: bool = True
     run_name: str = ""
+    results_dir: str = "results"
     skip_done: bool = False
     # How many times to run the WHOLE experiment. Each repeat uses a different
     # seed, and the result is the average plus how far apart the repeats were.
@@ -255,6 +256,7 @@ def load_config(path: str, share: str | None = None,
         persuasion=str(raw.get("persuasion", "")),
         parallel=bool(raw.get("parallel", True)),
         run_name=str(raw.get("run_name", "")),
+        results_dir=str(raw.get("results_dir", "results")),
         skip_done=bool(raw.get("skip_done", False)),
         repeats=int(raw.get("repeats", 1)),
         compare_baseline=bool(raw.get("compare_baseline", False)),
