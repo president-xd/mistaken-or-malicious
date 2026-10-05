@@ -74,6 +74,9 @@ class Config:
     trust_carry_over: bool = True
     sharpen: bool = True
     trust_share: str = "broadcast"
+    share_alpha: float = 0.5
+    share_trim: int = 1
+    attacker_reports: str = "truthful"
 
     # --- warm-up and learning schedule ---
     warmup: int = 0
@@ -261,6 +264,9 @@ def load_config(path: str, share: str | None = None,
         trust_carry_over=bool(raw.get("trust_carry_over", True)),
         sharpen=bool(raw.get("sharpen", True)),
         trust_share=str(raw.get("trust_share", "broadcast")).lower(),
+        share_alpha=float(raw.get("share_alpha", 0.5)),
+        share_trim=int(raw.get("share_trim", 1)),
+        attacker_reports=str(raw.get("attacker_reports", "truthful")).lower(),
         warmup=int(raw.get("warmup", 0)),
         trust_gamma=float(raw.get("trust_gamma", 2.0)),
         trust_learn_on=str(raw.get("trust_learn_on", "all")).lower(),
@@ -297,6 +303,12 @@ def _check(cfg: Config, path: str) -> None:
         stop(f"'share' must be one of: {', '.join(SHARE_MODES)}")
     if cfg.trust_share not in ("off", "broadcast"):
         stop("'trust_share' must be 'off' or 'broadcast'.")
+    if not 0 <= cfg.share_alpha <= 1:
+        stop("'share_alpha' must be between 0 and 1.")
+    if cfg.share_trim < 0:
+        stop("'share_trim' cannot be negative.")
+    if cfg.attacker_reports not in ("truthful", "bad_mouth"):
+        stop("'attacker_reports' must be 'truthful' or 'bad_mouth'.")
     if cfg.provider not in providers.PROVIDERS:
         stop(f"'provider' must be one of: {', '.join(providers.PROVIDERS)}")
     if not cfg.model:

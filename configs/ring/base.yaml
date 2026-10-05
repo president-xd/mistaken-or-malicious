@@ -8,6 +8,9 @@ scoring: answer
 warmup: 0
 trust: true
 trust_share: off
+share_alpha: 0.5
+share_trim: 1
+attacker_reports: truthful
 trust_carry_over: true
 trust_learn_on: all
 questions_file: data/questions_test_50.jsonl

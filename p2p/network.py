@@ -14,7 +14,7 @@ import asyncio
 import random
 from dataclasses import replace
 
-from . import logging_utils as log
+from . import gossip, logging_utils as log
 from . import metrics, providers, repeat, roles, schedule, topology, trust as trust_math
 from .agent import (PeerAgent, agent_names, belief_shift, make_clients,
                     make_model_client, top_answer)
@@ -89,6 +89,7 @@ class Network:
         # how FAST and how STEADY the formula is, not just the end value.
         self.history: list[dict] = []
         self.last_scores: dict[str, float] = {}
+        self.trust_log: list[dict] = []
         # A sleeper behaves well for the first half of the questions, then lies.
         # Liars that answered something other than the lie they were given.
         # An empty set means every liar really attacked.
@@ -145,6 +146,8 @@ class Network:
         Returns the signal table so it can be shown and saved.
         """
         cfg = self.cfg
+        previous_trust = {listener: dict(row)
+                  for listener, row in self.trust.items()}
         vectors = {n: self.embedder.vector(self.agents[n].answer) for n in self.names}
         if hasattr(self.embedder, "pad_all"):
             # With exact matching, a new answer adds a new slot, so vectors get
@@ -231,6 +234,21 @@ class Network:
             for listener, row in signals.items()
         }
         self.history.append({i: dict(r) for i, r in self.trust.items()})
+        if cfg.trust_share == "broadcast":
+            reports, group, effective = gossip.aggregate_trust(
+                self.adjacency, self.trust, previous_trust,
+                start_trust=cfg.start_trust,
+                alpha=getattr(cfg, "share_alpha", 0.5),
+                trim=getattr(cfg, "share_trim", 1),
+                liars=set(self.liars),
+                attacker_reports=getattr(cfg, "attacker_reports", "truthful"))
+            self.trust = effective
+            self.trust_log.append({
+                "reports": reports,
+                "G": group,
+                "E": effective,
+                "report_messages": sum(len(row) for row in reports.values()),
+            })
         return signals
 
     def heard_trust(self) -> dict:
@@ -352,6 +370,12 @@ class Network:
             # move the trust values.
             signals = (self.update_trust(learn=self.learning)
                        if self.use_trust else None)
+            if recorder and self.trust_log:
+                recorder.add_trust_log({
+                    "question": question.text,
+                    "round": r,
+                    **self.trust_log[-1],
+                })
             if self.use_trust:
                 log.trust_table(signals, self.trust, self.liars)
                 log.influence_line(self.influence(), self.liars)

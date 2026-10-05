@@ -50,6 +50,8 @@ class Results:
             "summary": {},
         }
         self._question = None
+        self._trust_log = []
+        self._trust_log_written = 0
         # Which repeat we are inside. Stays 1 when repeats is 1.
         self._repeat, self._seed = 1, cfg.seed
 
@@ -128,6 +130,9 @@ class Results:
         if influence:
             entry["influence"] = _round_nested(influence)
         self._question["rounds"].append(entry)
+
+    def add_trust_log(self, record):
+        self._trust_log.append(dict(record))
 
     def finish_question(self, final_answers, scores, per_agent=None):
         self._question["final_answers"] = dict(final_answers)
@@ -216,6 +221,11 @@ class Results:
 
     def save(self, folder="results", run_name="") -> str:
         Path(folder).mkdir(parents=True, exist_ok=True)
+        trust_path = Path(folder) / "trust_log.jsonl"
+        with trust_path.open("a", encoding="utf-8") as stream:
+            for record in self._trust_log[self._trust_log_written:]:
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self._trust_log_written = len(self._trust_log)
         name = run_name or f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         path = Path(folder) / f"{name}.json"
         # Write alongside the target and rename over it. Checkpointing happens
