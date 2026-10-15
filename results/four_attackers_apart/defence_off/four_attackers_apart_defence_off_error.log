@@ -1,0 +1,2 @@
+E:\trust-on-trail\venv\Lib\site-packages\autogen_agentchat\agents\_assistant_agent.py:1109: UserWarning: Resolved model mismatch: deepseek-chat != deepseek-flash. Model mapping in autogen_ext.models.openai may be incorrect. Set the model to deepseek-flash to enhance token/cost estimation and suppress this warning.
+  model_result = await model_client.create(

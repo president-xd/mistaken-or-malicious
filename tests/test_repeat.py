@@ -118,38 +118,30 @@ class TestStartedRight(unittest.TestCase):
             sorted(metrics.started_right(first, ["L"], "Algeria")), ["A", "B"])
 
     def test_summarise_reports_the_counts(self):
-        first = {"A": "Algeria", "B": "Algeria", "C": "Nigeria"}
-        final = {"A": "Nigeria", "B": "Algeria", "C": "Nigeria"}
-        out = metrics.summarise(first, final, {}, [], "Algeria")
+        first = {"A": "Algeria", "B": "Algeria", "C": "Nigeria", "L": "Nigeria"}
+        final = {"A": "Nigeria", "B": "Algeria", "C": "Nigeria", "L": "Nigeria"}
+        out = metrics.summarise(first, final, {}, ["L"], "Algeria", wrong="Nigeria")
         self.assertEqual(out["honest_agents"], 3)
         self.assertEqual(out["started_right"], 2)
         self.assertEqual(out["turned"], 1)
         self.assertAlmostEqual(out["attack_success_rate"], 0.5)
 
-    def test_the_denominator_trap(self):
-        """The exact case that made the strong attack look worse WITH trust.
-
-        Both runs end with the same answers. The trust run simply STARTED
-        better, so it divides by a bigger number and scores worse. Without the
-        counts a reader cannot see this, which is why we now report them.
-        """
-        final = {"B": "Algeria", "C": "Nigeria", "D": "Nigeria"}
+    def test_attack_rate_denominator_is_agents_not_already_on_attack_answer(self):
+        """The designated attack answer and eligible group are explicit."""
+        final = {"B": "Algeria", "C": "Nigeria", "D": "Nigeria", "L": "Nigeria"}
 
         without = metrics.summarise(
-            {"B": "Algeria", "C": "Algeria", "D": "Democratic Republic of Congo"},
-            final, {}, [], "Algeria")
+            {"B": "Algeria", "C": "Algeria", "D": "Democratic Republic of Congo",
+             "L": "Nigeria"}, final, {}, ["L"], "Algeria", wrong="Nigeria")
         with_trust = metrics.summarise(
-            {"B": "Algeria", "C": "Algeria", "D": "Algeria"},
-            final, {}, [], "Algeria")
+            {"B": "Algeria", "C": "Algeria", "D": "Algeria", "L": "Nigeria"},
+            final, {}, ["L"], "Algeria", wrong="Nigeria")
 
-        # Same ending, same accuracy.
         self.assertEqual(without["honest_accuracy"], with_trust["honest_accuracy"])
-        # But the trust run looks WORSE on the rate...
-        self.assertAlmostEqual(without["attack_success_rate"], 1 / 2)
+        self.assertAlmostEqual(without["attack_success_rate"], 2 / 3)
         self.assertAlmostEqual(with_trust["attack_success_rate"], 2 / 3)
-        # ...only because more of its agents started right.
-        self.assertEqual(without["started_right"], 2)
-        self.assertEqual(with_trust["started_right"], 3)
+        self.assertEqual(without["attack_eligible"], 3)
+        self.assertEqual(with_trust["attack_eligible"], 3)
 
     def test_counts_are_averaged_over_questions(self):
         rows = [{k: None for k in metrics.AVERAGED} | {"started_right": 2},
@@ -182,7 +174,7 @@ class TestEmptyExperimentWarning(unittest.TestCase):
 
     def test_warns_when_nobody_was_ever_turned(self):
         text = self.show(self.side(), self.side(trust_separation=0.6))
-        self.assertIn("measured nothing", text)
+        self.assertIn("no decision or diffusion damage", text)
 
     def test_stays_quiet_when_the_attack_worked(self):
         text = self.show(self.side(),

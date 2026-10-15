@@ -1,4 +1,4 @@
-# P2P Agent Network with Dynamic Trust
+# Trust-On-Trail: P2P Agent Network with Dynamic Trust
 
 > **Setting things up?** See **[SETTINGS.md](SETTINGS.md)** for every command
 > and every setting, with advice on what to choose.
@@ -181,7 +181,7 @@ the defence working.
 | Number | Good direction | Meaning |
 |---|---|---|
 | honest accuracy | higher | how many honest agents ended with the right answer |
-| attack success rate | lower | honest agents that were right at the start and wrong at the end |
+| attack success rate | lower | honest agents who started away from the attack answer and ended on it |
 | trust separation | higher | average trust in honest agents minus average trust in liars |
 | attacker influence | lower | the liars' share of all the attention |
 
@@ -190,21 +190,22 @@ equal share means the defence is working.
 
 ### Read the attack success rate carefully
 
-It is measured only over the honest agents that were **already right** before any
-discussion. That is on purpose: a weak model that was wrong from the start must not be
-able to make the attack look successful.
+The denominator is every honest agent who started on an answer other than the
+attackers' designated wrong answer, whether that initial answer was correct or wrong.
+The numerator counts those who ended on the attack answer. Agents who already started
+on that answer are excluded because discussion did not convert them. A belief change
+without a final-answer change does not count.
 
-But it means the group being measured **changes from run to run**, so the program now
-prints the sum behind it:
+The eligible group can still **change from run to run** if different numbers of agents
+start on the attack answer, so the program prints the eligible and converted counts:
 
 ```
-attack success rate  50.0%   = 1 turned of 2 that started right   (2 of 3 honest agents)
+attack success rate  20.0%   = 1 converted of 5 eligible honest agents
 ```
 
-A run where more agents started right divides by a bigger number. It can end with
-**exactly the same answers** as another run and still show a worse rate. When the two
-sides of a comparison started from different numbers, the program prints a warning
-saying so. Always read this number next to honest accuracy, never on its own.
+When two runs have different eligible counts, compare the counts as well as the rates.
+The program prints a warning when the two defence conditions have different
+denominators. Always read ASR next to honest accuracy, never on its own.
 
 ### One run is not a result
 
@@ -322,7 +323,7 @@ agent, separated by commas. Levels are `high`, `medium`, `low`.
 
 | Setting | Meaning |
 |---|---|
-| `questions_file` | a `.yaml` or `.jsonl` file of questions. See `data/tricky_questions_100.yaml` |
+| `questions_file` | a `.yaml` or `.jsonl` file of questions. The current study uses `data/questions_test_50.jsonl` |
 | `max_questions` | use only the first few, to try a big file quickly |
 
 ### Running
@@ -361,7 +362,12 @@ agent, separated by commas. Levels are `high`, `medium`, `low`.
 
 ## 8. The result file
 
-With `--result json`, everything is saved to `results/run_<time>.json`.
+With `--result json`, everything is saved under the configured `results_dir`
+(by default `results/`). Named runs use `<run_name>.json`.
+Named single runs and plain repeat series checkpoint after each completed
+question. If an API credit or connection failure interrupts a run, rerun the
+same command to resume from the saved checkpoint without repeating completed
+questions. Set `run_name` to enable resume.
 
 ```
 settings     every setting used for the run, read straight from the config
@@ -577,11 +583,10 @@ ever changes its mind, then "without trust" and "with trust" both score 100% acc
 and 0% attack success, and the comparison has measured nothing at all. The table still
 looks like a clean result.
 
-`data/tricky_questions_100.yaml` is the experiment pool. It contains common
-misconceptions, cognitive traps, close alternatives, and evidence-resolution
-scenarios. The file is structurally validated, but persuasion is model-dependent:
-screen it against the exact model used for the reported experiment and retain the
-per-question ASR denominator in the saved results.
+`data/questions_test_50.jsonl` is the fixed 50-question set used for the current
+attacker-count results. `data/questions_final_ring_gate_8.jsonl` is its small
+validation subset. The candidate pool and screening report are retained as the
+question-selection provenance; the final runs use the fixed 50-question file.
 
 **The program warns you when this happens.** If no honest agent was turned in either
 half, the comparison prints

@@ -148,13 +148,12 @@ class TestRoundBudget(unittest.TestCase):
             {"Agent_A": ["1"], "Agent_B": ["2"]}, topo="mesh", rounds=1)
         self.assertEqual(agents["Agent_A"].seen, [])
 
-    def test_early_stop_when_nobody_changes(self):
-        """Scripts that never change -> loop must stop after the first
-        discussion round instead of spending the budget."""
+    def test_full_budget_when_nobody_changes(self):
+        """Stable answers still run every configured discussion round."""
         agents = run_round_loop(
             {"Agent_A": ["1", "1", "1", "1"], "Agent_B": ["1", "1", "1", "1"]},
             topo="mesh", rounds=4)
-        self.assertEqual(agents["Agent_A"].turn, 1)
+        self.assertEqual(agents["Agent_A"].turn, 3)
 
 
 if __name__ == "__main__":

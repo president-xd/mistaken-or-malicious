@@ -11,12 +11,14 @@ peer genuinely "remembers" its reasoning while it debates.
 from __future__ import annotations
 
 import json
+import os
 import re
+from pathlib import Path
 
 from autogen_agentchat.agents import AssistantAgent
 from autogen_core import CancellationToken
 
-from . import prompts, providers
+from . import letters, prompts, providers
 
 # Kept for older code that imported it. The real text lives in prompts.py.
 PERSONA = prompts.HONEST
@@ -48,9 +50,6 @@ _SHORT_ANSWER = 60      # hard cap on anything we salvage from prose
 # Sent ALONE when the model forgot its ANSWER line. Re-sending the whole question
 # just reproduces the same failure, so instead we ask only for the missing line --
 # the agent still has its own reply in context and only has to name its verdict.
-_RETRY_NUDGE = prompts.RETRY
-
-
 def _salvage(text: str) -> str:
     """Best-effort answer when the model omitted its ANSWER line even after a retry.
 
@@ -191,16 +190,17 @@ def agent_names(count: int) -> list[str]:
 
 
 def make_model_client(model: str, provider: str = "ollama",
-                      seed: int | None = None):
+                      seed: int | None = None, temperature: float = 0.7):
     """A client for whichever provider the config asked for.
 
     The choice itself lives in providers.py. This stays here only so older
     code that imported it keeps working.
     """
-    return providers.make_client(provider, model, seed)
+    return providers.make_client(provider, model, seed, temperature)
 
 
-def make_clients(model: str, provider: str, seed: int | None, count: int):
+def make_clients(model: str, provider: str, seed: int | None, count: int,
+                 temperature: float = 0.7):
     """One client per agent, each with its OWN seed.
 
     Every agent must be repeatable, but they must not all become the same
@@ -215,8 +215,10 @@ def make_clients(model: str, provider: str, seed: int | None, count: int):
     With no seed set, every client is unseeded and the run is not repeatable.
     """
     if seed is None:
-        return [providers.make_client(provider, model) for _ in range(count)]
-    return [providers.make_client(provider, model, seed + i) for i in range(count)]
+        return [providers.make_client(provider, model, temperature=temperature)
+                for _ in range(count)]
+    return [providers.make_client(provider, model, seed + i, temperature)
+            for i in range(count)]
 
 
 class PeerAgent:
@@ -230,13 +232,18 @@ class PeerAgent:
 
     def __init__(self, name: str, client,
                  role: str = "honest", wrong_answer: str = "",
-                 agreeableness: str = "", persuasion: str = ""):
+                 wrong_text: str = "", agreeableness: str = "",
+                 persuasion: str = "", answer_format: str = "free"):
         self.name = name
         self.role = role           # "honest" or "liar"
         self.wrong_answer = wrong_answer   # the answer a liar must defend
+        self.wrong_text = wrong_text
+        self.initial_error_answer = ""  # seeded first-round mistake treatment
+        self.answer_format = answer_format
         self.agreeableness = agreeableness  # how easily it changes its mind
         self.persuasion = persuasion        # how hard it pushes its view
         self.answer = ""       # current one-line answer (the ANSWER: value)
+        self.model_answer = ""  # parsed model output before attacker enforcement
         self.belief = {}       # answer -> probability, over the answers in play
         self.reasoning = ""    # full text of the latest reply
         self.parsed = True     # did the latest reply contain a usable ANSWER line?
@@ -257,18 +264,40 @@ class PeerAgent:
         result = await self._agent.run(task=prompt)
         return result.messages[-1].content.strip()
 
-    async def _ask(self, prompt: str) -> str:
+    async def _ask(self, prompt: str, force_answer: str = "") -> str:
         """Run a prompt and absorb the reply, retrying ONCE if the ANSWER line is
         missing. Small models drop the format often, and an unparsed reply used
         to freeze an agent's answer for the rest of the run."""
         self.retried = False
+        dump_agent = os.environ.get("P2P_DUMP_AGENT")
+        dump_path = os.environ.get("P2P_DUMP_PROMPT")
+        if dump_agent == self.name and dump_path and "Peers you can hear" in prompt:
+            path = Path(dump_path)
+            if not path.exists():
+                path.write_text(prompt, encoding="utf-8")
         text = await self._run(prompt)
         self._absorb(text)
+        self.model_answer = self.answer
+        if force_answer:
+            # Keep the model's answer for audit, then apply the protocol's
+            # assigned first-round mistake or attacker commitment.
+            lines = [
+                line for line in text.splitlines()
+                if not _ANSWER_RE.match(line)
+                and not re.match(r"^\W{0,4}BELIEF\W{0,4}:", line, re.I)
+            ]
+            lines.extend((f'BELIEF: {json.dumps({force_answer: 1.0})}',
+                          f"ANSWER: {force_answer}"))
+            text = "\n".join(lines)
+            self._absorb(text)
+            self.belief = {self.answer: 1.0}
+            return text
         if not self.parsed:
             self.retried = True
             # Ask ONLY for the missing line, then absorb both together so the
             # original reasoning is kept and the verdict comes from the follow-up.
-            text = f"{text}\n{await self._run(_RETRY_NUDGE)}"
+            text = f"{text}\n{await self._run(prompts.retry(
+                getattr(self, "answer_format", "free")))}"
             self._absorb(text)
         return text
 
@@ -276,14 +305,23 @@ class PeerAgent:
         """Clear this agent's memory (via the SDK) before a new question."""
         await self._agent.on_reset(CancellationToken())
         self.answer = ""
+        self.model_answer = ""
+        self.initial_error_answer = ""
         self.belief = {}
         self.reasoning = ""
+        self._candidates = []
 
     async def solve(self, question: str) -> str:
         """Phase 1: answer independently, having heard no peer yet."""
         if self.lies and self.wrong_answer:
-            return await self._ask(prompts.solve_as_liar(question, self.wrong_answer))
-        return await self._ask(prompts.solve(question))
+            return await self._ask(prompts.solve_as_liar(
+                question, self.wrong_answer, self.answer_format, self.wrong_text),
+                force_answer=self.wrong_answer)
+        if self.initial_error_answer:
+            return await self._ask(prompts.solve_with_initial_error(
+                question, self.initial_error_answer, self.answer_format),
+                force_answer=self.initial_error_answer)
+        return await self._ask(prompts.solve(question, self.answer_format))
 
     def argument(self) -> str:
         """This peer's OWN reasoning, ready to share with neighbours.
@@ -331,8 +369,11 @@ class PeerAgent:
         # The LIST is passed, not a formatted string, so prompts.py can build
         # the worked example out of the answers actually in play. A fixed
         # example got copied verbatim and the belief was then discarded.
+        answer_for_prompt = self.wrong_answer if self.lies else previous
         text = await self._ask(
-            write(question, previous, peers, self._candidates, note))
+            write(question, answer_for_prompt, peers, self._candidates, note,
+                self.answer_format),
+            force_answer=self.wrong_answer if self.lies else "")
         self._absorb(text)
         # Compare normalized: "Yes" -> "yes." is NOT a change of mind.
         changed = _norm(self.answer) != _norm(previous)
@@ -348,7 +389,10 @@ class PeerAgent:
         self.reasoning = text
         hits = _ANSWER_RE.findall(text)
         if hits:
-            self.answer = _condense(hits[-1].strip(_TRIM), text)
+            value = hits[-1].strip(_TRIM)
+            canonical = (letters.canonical_letter(value)
+                         if getattr(self, "answer_format", "free") == "letter" else "")
+            self.answer = canonical or _condense(value, text)
             # An ANSWER line holding a whole sentence ("It is incorrect to
             # classify a hot dog as a sandwich") is not a comparable verdict --
             # two agents that both mean "no" would never be seen to agree. Treat
@@ -357,7 +401,10 @@ class PeerAgent:
         else:
             self.parsed = False
             if not self.answer:  # no ANSWER line at all on the very first turn
-                self.answer = _salvage(text)
+                value = _salvage(text)
+                self.answer = (letters.canonical_letter(value)
+                               if getattr(self, "answer_format", "free") == "letter"
+                               else value)
         # Otherwise keep the previous answer -- but the caller WARNs, because a
         # real change may have been stated in prose we could not read.
 
