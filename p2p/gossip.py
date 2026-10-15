@@ -55,3 +55,16 @@ def aggregate_trust(adjacency: dict[str, list[str]], local: dict[str, dict[str, 
                 value = group
             effective[x][target] = min(1.0, max(0.0, value))
     return reports, aggregate, effective
+
+
+def aggregate_round(local: dict[str, dict[str, float]],
+                    hears: dict[str, list[str]],
+                    prev_effective: dict[str, dict[str, float]],
+                    liars: set[str] | list[str] | None = None,
+                    alpha: float = 0.5, trim: int = 1,
+                    attacker_reports: str = "truthful") -> tuple[dict, dict, dict]:
+    """Compatibility-facing name for one decentralized sharing round."""
+    return aggregate_trust(
+        hears, local, prev_effective,
+        start_trust=0.5, alpha=alpha, trim=trim,
+        liars=set(liars or ()), attacker_reports=attacker_reports)

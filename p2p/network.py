@@ -11,6 +11,7 @@ This file does NOT decide answers. Agents do that. This file only:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import random
 from dataclasses import replace
 
@@ -42,7 +43,9 @@ class Network:
         self.names = list(agents) if agents else agent_names(cfg.agents)
         self.adjacency = topology.build(cfg.topology, self.names)
         self.use_trust = cfg.trust if force_trust is None else force_trust
-        self.show_trust = self.use_trust and cfg.trust_share != "off"
+        self.track_trust = cfg.track_trust or self.use_trust
+        self.show_trust = (self.use_trust and cfg.trust_share != "off"
+                           and cfg.trust_weighting in ("prompt", "both"))
 
         # Decide who lies. `all_liars` is used by the network-vs-network mode.
         if all_liars:
@@ -64,17 +67,21 @@ class Network:
                 return client[index % len(client)]
             return client
 
-        self.agents = agents or {
-            name: PeerAgent(
-                name, client_for(i),
-                role="liar" if name in self.liars else "honest",
-                wrong_answer=cfg.attacker_answer,
-                answer_format=cfg.answer_format,
-                agreeableness=cfg.trait_for_role(
+        def build_agent(i, name):
+            options = {
+                "role": "liar" if name in self.liars else "honest",
+                "wrong_answer": cfg.attacker_answer,
+                "agreeableness": cfg.trait_for_role(
                     i, "liar" if name in self.liars else "honest", "agreeableness"),
-                persuasion=cfg.trait_for_role(
-                    i, "liar" if name in self.liars else "honest", "persuasion"))
-            for i, name in enumerate(self.names)
+                "persuasion": cfg.trait_for_role(
+                    i, "liar" if name in self.liars else "honest", "persuasion"),
+            }
+            if cfg.answer_format != "free":
+                options["answer_format"] = cfg.answer_format
+            return PeerAgent(name, client_for(i), **options)
+
+        self.agents = agents or {
+            name: build_agent(i, name) for i, name in enumerate(self.names)
         }
 
         # trust[listener][speaker]. Only agents you can hear are ever scored.
@@ -85,16 +92,19 @@ class Network:
         }
         self.embedder = make_embedder(cfg.scoring, cfg.embed_model)
         self.previous_vectors: dict[str, list[float]] = {}
+        self.previous_answers: dict[str, str] = {}
         self.rows: list[dict] = []
         # A copy of the trust table after each round, so we can judge
         # how FAST and how STEADY the formula is, not just the end value.
         self.history: list[dict] = []
         self.last_scores: dict[str, float] = {}
         self.trust_log: list[dict] = []
+        self.floor_events: list[dict] = []
         # A sleeper behaves well for the first half of the questions, then lies.
         # Liars that answered something other than the lie they were given.
         # An empty set means every liar really attacked.
         self.liar_refused: set[str] = set()
+        self.honest_error_events: list[dict] = []
         self.learning = True   # may this question change trust?
         self.asleep = cfg.sleeper
         self.wake_after = max(1, len(cfg.questions) // 2) if cfg.sleeper else 0
@@ -112,8 +122,18 @@ class Network:
     def heard_by(self, name: str) -> list[str]:
         """Who this agent can hear, after the trust floor removes distrusted peers."""
         peers = self.adjacency[name]
-        if self.show_trust and self.cfg.trust_floor > 0:
-            peers = [p for p in peers if self.trust[name][p] >= self.cfg.trust_floor]
+        if self.use_trust and self.cfg.trust_weighting in ("floor", "both"):
+            if self.cfg.trust_floor > 0:
+                kept = [p for p in peers if self.trust[name][p] >= self.cfg.trust_floor]
+                if (self.cfg.topology == "ring" and len(peers) > 1
+                        and not kept):
+                    kept = [max(peers, key=lambda p: self.trust[name][p])]
+                if len(peers) > 1 and len(kept) < len(peers):
+                    self.floor_events.append({
+                        "listener": name, "silenced": [p for p in peers if p not in kept],
+                        "kept": kept,
+                    })
+                peers = kept
         return peers
 
     def neighbours_of(self, name: str, snapshot: dict) -> dict:
@@ -176,8 +196,15 @@ class Network:
                           if name != speaker]
                 raw[listener][speaker] = {
                     "agree": trust_math.agree_score(vectors[speaker], others),
-                    "consist": trust_math.consist_score(
-                        vectors[speaker], self.previous_vectors.get(speaker)),
+                    "consist": (
+                        trust_math.NEUTRAL
+                        if not self.previous_answers
+                        else trust_math.responsive_consist(
+                            self.previous_answers.get(speaker),
+                            self.agents[speaker].answer,
+                            [self.agents[n].answer for n in locally_visible],
+                            len(self.history) + 2)
+                    ),
                     "anomaly": trust_math.anomaly_score(vectors[speaker], others),
                 }
 
@@ -190,10 +217,7 @@ class Network:
                         values["anomaly"], is_anomaly=True)
                     # No previous answer means neutral, not a failed consistency
                     # check. Stretch only real similarity measurements.
-                    values["consist"] = (
-                        trust_math.stretch_exact(values["consist"])
-                        if speaker in self.previous_vectors
-                        else trust_math.NEUTRAL)
+                    # responsive_consist is already an answer-support ratio.
 
         # Embedding similarities can occupy a very narrow range. Sharpen only
         # within one listener's local evidence; global sharpening would leak
@@ -235,7 +259,7 @@ class Network:
             for listener, row in signals.items()
         }
         self.history.append({i: dict(r) for i, r in self.trust.items()})
-        if cfg.trust_share == "broadcast":
+        if cfg.trust_share in ("off", "broadcast"):
             reports, group, effective = gossip.aggregate_trust(
                 self.adjacency, self.trust, previous_trust,
                 start_trust=cfg.start_trust,
@@ -243,17 +267,24 @@ class Network:
                 trim=getattr(cfg, "share_trim", 1),
                 liars=set(self.liars),
                 attacker_reports=getattr(cfg, "attacker_reports", "truthful"))
-            self.trust = {
-                listener: {target: value for target, value in row.items()
-                           if target in self.adjacency[listener]}
-                for listener, row in effective.items()
-            }
+            if cfg.trust_share == "broadcast":
+                self.trust = {
+                    listener: {target: value for target, value in row.items()
+                               if target in self.adjacency[listener]}
+                    for listener, row in effective.items()
+                }
             self.trust_log.append({
                 "reports": reports,
                 "G": group,
                 "E": effective,
+                "trust_local": previous_trust,
+                "trust_shared": effective,
                 "report_messages": sum(len(row) for row in reports.values()),
+                "floor_events": list(self.floor_events),
             })
+        self.previous_answers = {
+            name: self.agents[name].answer for name in self.names
+        }
         return signals
 
     def heard_trust(self) -> dict:
@@ -281,6 +312,12 @@ class Network:
         return out
 
     def influence(self) -> dict:
+        if not self.use_trust:
+            return {
+                listener: trust_math.influence_shares(
+                    {speaker: 1.0 for speaker in self.adjacency[listener]})
+                for listener in self.names
+            }
         return {listener: trust_math.influence_shares(row)
                 for listener, row in self.heard_trust().items()}
 
@@ -308,6 +345,8 @@ class Network:
         # about the next, and without this a single refusal early on would
         # mark the liar as broken for the whole run.
         self.liar_refused = set()
+        self.honest_error_events = []
+        self.floor_events = []
 
         wrong = question.wrong or cfg.attacker_answer
         for name in self.liars:
@@ -318,10 +357,14 @@ class Network:
             log.info(f"{'sleeper' if len(self.liars) == 1 else 'sleepers'} still "
                      f"asleep - defending the CORRECT answer to build trust")
 
+        # Seed the same private initial mistakes in both paired trust arms.
+        self._prepare_honest_errors(question)
+
         # Round 1: everyone answers alone.
         log.phase(f"ROUND 1/{cfg.rounds} - each agent answers alone")
         log.working(self.names, cfg.parallel)
         texts = await self._all(lambda n: self.agents[n].solve(question.text))
+        self._record_honest_errors(question)
         for name, text in zip(self.names, texts):
             log.reply(name, text)
             self._report(name)
@@ -329,7 +372,10 @@ class Network:
         round_answers = [dict(first_answers)]
 
         if recorder:
-            recorder.add_round(1, self.agents)
+            recorder.add_honest_error_events(self.honest_error_events)
+            recorder.add_round(
+                1, self.agents, self.trust if self.track_trust else None,
+                None, self.influence() if self.track_trust else None)
 
         # Rounds 2..N: discussion, then a trust update.
         for r in range(2, cfg.rounds + 1):
@@ -375,7 +421,7 @@ class Network:
             # On a frozen question we still SHOW the signals but do not
             # move the trust values.
             signals = (self.update_trust(learn=self.learning)
-                       if self.use_trust else None)
+                       if self.track_trust else None)
             if recorder and self.trust_log:
                 recorder.add_trust_log({
                     "question": question.text,
@@ -387,8 +433,8 @@ class Network:
                 log.influence_line(self.influence(), self.liars)
             log.round_summary(r, changes)
             if recorder:
-                recorder.add_round(r, self.agents, self.trust if self.use_trust else None,
-                                   signals, self.influence() if self.use_trust else None)
+                recorder.add_round(r, self.agents, self.trust if self.track_trust else None,
+                                   signals, self.influence() if self.track_trust else None)
 
 
         # Score it.
@@ -401,7 +447,7 @@ class Network:
             first_answers, final, heard, self.liars, question.answer,
             round_answers=round_answers, wrong=wrong,
             detection_trust=self.trust)
-        if self.use_trust and self.history:
+        if self.track_trust and self.history:
             scores.update(metrics.formula_report(
                 self.history, self.last_scores, self.liars,
                 cfg.trust_memory, self.trust_at_start))
@@ -412,6 +458,61 @@ class Network:
         if recorder:
             recorder.finish_question(final, scores, per_agent)
         return scores
+
+    def _prepare_honest_errors(self, question):
+        """Assign a paired, seeded first-round mistake to selected honest peers."""
+        cfg = self.cfg
+        self.honest_error_events = []
+        for name in self.names:
+            if name in self.liars:
+                continue
+            agent = self.agents[name]
+            agent.initial_error_answer = ""
+            if cfg.honest_error_rate <= 0:
+                continue
+            digest = hashlib.sha256(
+                f"{cfg.honest_error_seed}|{question.id}|{question.text}|{name}"
+                .encode("utf-8")
+            ).digest()
+            draw = int.from_bytes(digest[:8], "big") / 2**64
+            if draw >= cfg.honest_error_rate:
+                continue
+            designated_wrong = question.wrong
+            if (not designated_wrong
+                    or metrics.is_correct(designated_wrong, question.answer)):
+                continue
+            if cfg.answer_format == "letter":
+                # Keep the seeded honest mistake independent of the attackers'
+                # chosen lie. All remaining options are wrong, but they do not
+                # start by echoing the malicious agents' answer.
+                attack_target = designated_wrong.upper()
+                correct = question.answer.upper()
+                alternatives = [choice for choice in "ABCDE"
+                                if choice not in (correct, attack_target)]
+                if not alternatives:
+                    alternatives = [attack_target]
+                target = alternatives[
+                    int.from_bytes(digest[8:16], "big") % len(alternatives)]
+            else:
+                target = designated_wrong
+            agent.initial_error_answer = target
+
+    def _record_honest_errors(self, question):
+        """Keep each seeded mistake intervention visible in saved results."""
+        for name in self.names:
+            agent = self.agents[name]
+            target = getattr(agent, "initial_error_answer", "")
+            if not target:
+                continue
+            self.honest_error_events.append({
+                "agent": name,
+                "question_id": question.id,
+                "model_first_answer": agent.model_answer,
+                "delivered_first_answer": agent.answer,
+                "to": target,
+                "attacker_wrong_answer": question.wrong,
+                "seed": self.cfg.honest_error_seed,
+            })
 
     def _report(self, name, changed=False, by=""):
         """Print what happened on one agent's turn."""
@@ -529,17 +630,18 @@ async def run_network(cfg: Config, recorder=None) -> None:
     client = None
     try:
         if cfg.topologies:
-            client = make_clients(cfg.model, cfg.provider, cfg.seed, cfg.agents)
+            client = make_clients(cfg.model, cfg.provider, cfg.seed, cfg.agents,
+                                  cfg.temperature)
             await _topology_sweep(cfg, client, recorder)
         elif cfg.repeats > 1:
             await _repeat(cfg, recorder)
         else:
-            client = make_clients(cfg.model, cfg.provider, cfg.seed, cfg.agents)
+            client = make_clients(cfg.model, cfg.provider, cfg.seed, cfg.agents,
+                                  cfg.temperature)
             random.seed(cfg.seed)
-            # Only this branch may checkpoint and resume. A sweep or a set of
-            # repeats writes many runs into one recorder, so "how far did we
-            # get" is not a single number and a half-restored file would mix
-            # two experiments together.
+            # A single plain run and a plain repeat series checkpoint. Sweeps
+            # and paired comparison modes write multiple networks into one
+            # recorder, so they need a different resume boundary.
             await _once(cfg, client, recorder, resumable=True)
     finally:
         # One client per agent now, so close them all.
@@ -563,7 +665,7 @@ async def _topology_sweep(cfg: Config, client, recorder=None):
         child = Results(this_cfg, names, liars) if recorder else None
         random.seed(this_cfg.seed)
         if this_cfg.repeats > 1:
-            _, summary = await _repeat(this_cfg, child)
+            _, summary = await _repeat(this_cfg, child, resumable=False)
         else:
             _, summary = await _once(this_cfg, client, child)
         summaries[kind] = summary
@@ -574,7 +676,8 @@ async def _topology_sweep(cfg: Config, client, recorder=None):
     return summaries
 
 
-async def _once(cfg: Config, client, recorder, resumable=False):
+async def _once(cfg: Config, client, recorder, resumable=False,
+                completed_repeats=(), completed_left_repeats=()):
     """Run the chosen experiment exactly once.
 
     Gives back the two summaries as (left, right). `left` is None for a plain
@@ -588,16 +691,19 @@ async def _once(cfg: Config, client, recorder, resumable=False):
 
     net = Network(cfg, client)
     log.session(cfg, net.names, net.liars, net.adjacency, net.use_trust)
-    failed = await _run_all(net, cfg, recorder, resumable)
+    failed = await _run_all(
+        net, cfg, recorder, resumable,
+        completed_repeats=completed_repeats,
+        completed_left_repeats=completed_left_repeats)
     summary = metrics.average_runs(net.rows)
     if recorder:
         recorder.set_summary(summary)
-        if resumable:
+        if resumable and cfg.repeats == 1:
             recorder.mark_complete(failed)
     return None, summary
 
 
-async def _repeat(cfg: Config, recorder):
+async def _repeat(cfg: Config, recorder, resumable=True):
     """Run the WHOLE experiment several times and report the average.
 
     Each repeat gets its own seed, so the liars sit in different seats and the
@@ -611,23 +717,52 @@ async def _repeat(cfg: Config, recorder):
                f"One run is luck. The average over the repeats, and how far "
                f"apart they were, is the result.")
     lefts, rights = [], []
+    can_resume = (resumable and bool(recorder)
+                  and not cfg.compare_baseline and not cfg.network_vs_network)
+    start_repeat = 1
+    if can_resume:
+        from .results import load_checkpoint
+        saved = load_checkpoint(cfg.run_name, cfg.results_dir)
+        if saved:
+            progress = saved.get("progress", {})
+            start_repeat = max(1, int(progress.get("repeat_number", 1)))
+            rights = [dict(run) for run in
+                      progress.get("completed_repeats", [])]
+            lefts = [dict(run) for run in
+                     progress.get("completed_left_repeats", [])]
+            log.banner(f"RESUMING: {cfg.run_name}\n"
+                       f"{len(rights)} repeat(s) complete; continuing with "
+                       f"repeat {start_repeat}.")
 
     for i in range(cfg.repeats):
+        if i + 1 < start_repeat:
+            continue
         seed = cfg.seed + i
         this_run = replace(cfg, seed=seed)
-        clients = make_clients(cfg.model, cfg.provider, seed, cfg.agents)
+        clients = make_clients(cfg.model, cfg.provider, seed, cfg.agents,
+                               cfg.temperature)
         random.seed(seed)
         log.repeat_header(i + 1, cfg.repeats, seed)
         if recorder:
             recorder.start_repeat(i + 1, seed)
         try:
-            left, right = await _once(this_run, clients, recorder)
+            left, right = await _once(
+                this_run, clients, recorder, resumable=can_resume,
+                completed_repeats=rights,
+                completed_left_repeats=lefts)
         finally:
             for client in clients:
                 await client.close()
         if left is not None:
             lefts.append(left)
         rights.append(right)
+        if can_resume:
+            recorder.mark_progress(
+                0, repeat_number=i + 2,
+                completed_repeats=rights,
+                completed_left_repeats=lefts)
+            recorder.checkpoint(folder=cfg.results_dir,
+                                run_name=cfg.run_name)
 
     combined_right = repeat.combine(rights)
     if lefts:
@@ -646,6 +781,7 @@ async def _repeat(cfg: Config, recorder):
         recorder.set_repeats(cfg.repeats, rights, combined_right,
                             lefts or None,
                              repeat.combine(lefts) if lefts else None)
+        recorder.mark_complete()
     return (repeat.means_only(combined_left) if lefts else None,
             repeat.means_only(combined_right))
 
@@ -679,10 +815,10 @@ def _restore(net, cfg, recorder):
 
     progress = data.get("progress", {})
     done = int(progress.get("questions_done") or 0)
+    recorder.adopt(data)
     if done <= 0:
         return 0, []
 
-    recorder.adopt(data)
     # Trust and the scored rows are the run's memory. Without both, a resumed
     # run would start trusting everyone again and would report its summary
     # over only the questions asked after the restart.
@@ -758,7 +894,8 @@ async def _question_with_retry(net, cfg, question, recorder) -> bool:
     return False
 
 
-async def _run_all(net, cfg, recorder, resumable=False):
+async def _run_all(net, cfg, recorder, resumable=False,
+                   completed_repeats=(), completed_left_repeats=()):
     """Warm up if asked, then run and score the remaining questions.
 
     Returns the list of question numbers that could not be completed.
@@ -813,7 +950,11 @@ async def _run_all(net, cfg, recorder, resumable=False):
         # 86 questions already paid for.
         done = i
         if resumable and recorder:
-            recorder.mark_progress(done, net.trust, net.rows, failed)
+            recorder.mark_progress(
+                done, net.trust, net.rows, failed,
+                repeat_number=recorder._repeat,
+                completed_repeats=completed_repeats,
+                completed_left_repeats=completed_left_repeats)
             recorder.checkpoint(folder=cfg.results_dir, run_name=cfg.run_name)
 
     if failed:

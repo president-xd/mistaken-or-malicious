@@ -53,8 +53,9 @@ DEFAULT_MODEL = {
     # answer format every time, and defended a lie without giving the game away.
     # See 'Which model to use' in README.md for the measurements.
     "ollama": "qwen2.5:14b",
-    "deepseek": "deepseek-v4-pro",
+    "deepseek": "deepseek-chat",
 }
+DEEPSEEK_MODELS = ("deepseek-chat", "deepseek-v4-pro")
 
 # Our agents read and write plain text. We never ask for tool calls or for the
 # model to return JSON itself, so all of these stay off for both providers.
@@ -134,7 +135,8 @@ def deepseek_key() -> str:
     return key
 
 
-def make_client(provider: str, model: str, seed: int | None = None):
+def make_client(provider: str, model: str, seed: int | None = None,
+                temperature: float = 0.7):
     """Build the model client for one provider.
 
     `seed` makes the model itself repeatable. Without it the same question can
@@ -162,6 +164,7 @@ def make_client(provider: str, model: str, seed: int | None = None):
             # forced whole 100-question scenarios to restart.
             timeout=600.0,
             max_retries=3,
+            temperature=temperature,
             **extra,
         )
     if provider == "ollama":

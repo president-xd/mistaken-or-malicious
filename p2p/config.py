@@ -8,6 +8,7 @@ default always keeps the old behaviour (no liars, no trust).
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -47,6 +48,9 @@ class Config:
     # the API. The default stays local, so nothing costs money by accident.
     provider: str = "ollama"
     model: str = "llama3.2:1b"
+    temperature: float = 0.7
+    honest_error_rate: float = 0.0
+    honest_error_seed: int = 1
     # The embedding model is only used by scoring: "text", and it always runs
     # locally on Ollama, whichever provider answers the questions.
     embed_model: str = "nomic-embed-text"
@@ -75,6 +79,8 @@ class Config:
     weight_consist: float = 1 / 3
     weight_anomaly: float = 1 / 3
     trust_floor: float = 0.0
+    trust_weighting: str = "both"
+    track_trust: bool = True
     trust_carry_over: bool = True
     sharpen: bool = True
     trust_share: str = "broadcast"
@@ -93,6 +99,8 @@ class Config:
     agreeableness: str = ""
     persuasion: str = ""
     honest_agreeableness: str = "high"
+    honest_persuasion: str = ""
+    liar_agreeableness: str = ""
     liar_persuasion: str = "high"
 
     # --- running ---
@@ -120,10 +128,12 @@ class Config:
         legacy = self.trait_for(index, which)
         if legacy:
             return legacy
-        if role == "honest" and which == "agreeableness":
-            return self.honest_agreeableness
-        if role == "liar" and which == "persuasion":
-            return self.liar_persuasion
+        if role == "honest":
+            return (self.honest_agreeableness if which == "agreeableness"
+                    else self.honest_persuasion)
+        if role == "liar":
+            return (self.liar_agreeableness if which == "agreeableness"
+                    else self.liar_persuasion)
         return ""
 
 
@@ -252,6 +262,9 @@ def load_config(path: str, share: str | None = None,
         questions=questions,
         provider=chosen,
         model=chosen_model,
+        temperature=float(raw.get("temperature", 0.7)),
+        honest_error_rate=float(raw.get("honest_error_rate", 0.0)),
+        honest_error_seed=int(raw.get("honest_error_seed", raw.get("seed", 1))),
         embed_model=str(raw.get("embed_model", "nomic-embed-text")),
         # "agents" is the new name; "num_agents" still works.
         agents=int(raw.get("agents", raw.get("num_agents", 3))),
@@ -273,6 +286,8 @@ def load_config(path: str, share: str | None = None,
         weight_consist=float(raw.get("weight_consist", 1 / 3)),
         weight_anomaly=float(raw.get("weight_anomaly", 1 / 3)),
         trust_floor=float(raw.get("trust_floor", 0.0)),
+        trust_weighting=str(raw.get("trust_weighting", "both")).lower(),
+        track_trust=bool(raw.get("track_trust", True)),
         trust_carry_over=bool(raw.get("trust_carry_over", True)),
         sharpen=bool(raw.get("sharpen", True)),
         trust_share=str(raw.get("trust_share", "broadcast")).lower(),
@@ -287,6 +302,8 @@ def load_config(path: str, share: str | None = None,
         agreeableness=str(raw.get("agreeableness", "")),
         persuasion=str(raw.get("persuasion", "")),
         honest_agreeableness=str(raw.get("honest_agreeableness", "high")),
+        honest_persuasion=str(raw.get("honest_persuasion", "")),
+        liar_agreeableness=str(raw.get("liar_agreeableness", "")),
         liar_persuasion=str(raw.get("liar_persuasion", "high")),
         parallel=bool(raw.get("parallel", True)),
         run_name=str(raw.get("run_name", "")),
@@ -309,12 +326,16 @@ def _check(cfg: Config, path: str) -> None:
         stop("'agents' must be at least 2 - one agent has nobody to talk to.")
     if cfg.rounds < 1:
         stop("'rounds' must be at least 1.")
+    if not 0 <= cfg.honest_error_rate <= 1:
+        stop("'honest_error_rate' must be between 0 and 1.")
     if cfg.repeats < 1:
         stop("'repeats' must be at least 1.")
     if cfg.share not in SHARE_MODES:
         stop(f"'share' must be one of: {', '.join(SHARE_MODES)}")
     if cfg.trust_share not in ("off", "broadcast"):
         stop("'trust_share' must be 'off' or 'broadcast'.")
+    if cfg.trust_weighting not in ("floor", "prompt", "both"):
+        stop("'trust_weighting' must be 'floor', 'prompt', or 'both'.")
     if not 0 <= cfg.share_alpha <= 1:
         stop("'share_alpha' must be between 0 and 1.")
     if cfg.share_trim < 0:
@@ -329,6 +350,8 @@ def _check(cfg: Config, path: str) -> None:
         stop(f"'scoring' must be one of: {', '.join(SCORING_MODES)}")
     if cfg.answer_format not in ("letter", "free"):
         stop("'answer_format' must be 'letter' or 'free'.")
+    if cfg.answer_format == "letter":
+        _check_letter_questions(cfg.questions, stop)
     if cfg.topology not in topology.available():
         stop(f"unknown topology '{cfg.topology}'. "
              f"choose one of: {', '.join(topology.available())}")
@@ -380,7 +403,6 @@ def _check(cfg: Config, path: str) -> None:
         stop(f"'warmup' is {cfg.warmup} but there are only {len(cfg.questions)} "
              f"questions. Warm-up questions are not scored, so at least one "
              f"question must be left over.")
-
     for which in ("agreeableness", "persuasion"):
         text = getattr(cfg, which)
         for level in [p.strip().lower() for p in text.split(",") if p.strip()]:
@@ -388,10 +410,20 @@ def _check(cfg: Config, path: str) -> None:
                 stop(f"'{which}' has an unknown level '{level}'. "
                      f"Use: high, medium, low")
 
-    # A question with no answer cannot be scored. Warn rather than stop, so
-    # plain discussion runs still work.
-    if cfg.attackers or cfg.trust:
-        missing = [q.text[:40] for q in cfg.questions if not q.answer]
-        if missing:
-            stop("every question needs an 'answer:' when using attackers or "
-                 f"trust. Missing for: {missing[0]}...")
+
+def _check_letter_questions(questions: list[Question], stop) -> None:
+    """Validate the multiple-choice contract before a model call starts."""
+    seen = set()
+    for number, question in enumerate(questions, start=1):
+        if question.text in seen:
+            stop(f"question {number} is a duplicate.")
+        seen.add(question.text)
+        if not all(re.search(rf"(?:^|\s){letter}[).:]", question.text, re.I)
+                   for letter in "ABCDE"):
+            stop(f"question {number} does not contain options A-E.")
+        answer = question.answer.upper()
+        wrong = question.wrong.upper()
+        if len(answer) != 1 or answer not in "ABCDE":
+            stop(f"question {number} has an invalid answer letter.")
+        if len(wrong) != 1 or wrong not in "ABCDE" or wrong == answer:
+            stop(f"question {number} has an invalid wrong letter.")

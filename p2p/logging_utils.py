@@ -303,20 +303,15 @@ def _count(value) -> str:
 
 
 def _asr_workings(scores) -> str:
-    """The sum behind the attack success rate, written out.
-
-    The rate on its own hides the group it was measured over, and that group
-    changes from run to run. Printing the sum stops a reader comparing two
-    percentages that were never measured over the same number of agents.
-    """
-    started, turned = scores.get("started_right"), scores.get("turned")
-    honest = scores.get("honest_agents")
-    if started is None or turned is None:
+    """Show the conversions and eligible honest agents behind ASR."""
+    eligible = scores.get("attack_eligible")
+    conversions = scores.get("attack_conversions")
+    if eligible is None or conversions is None:
         return "   (lower is better)"
-    if not float(started):
-        return "   (no honest agent started right, so there was nothing to break)"
-    return (f"   = {_count(turned)} turned of {_count(started)} that started right"
-            f"   ({_count(started)} of {_count(honest)} honest agents)")
+    if not float(eligible):
+        return "   (no honest agent started away from the attack answer)"
+    return (f"   = {_count(conversions)} converted of {_count(eligible)} eligible "
+            "honest agents")
 
 
 def _score_block(scores, use_trust) -> None:
@@ -326,6 +321,8 @@ def _score_block(scores, use_trust) -> None:
         return f"{value:.1%}" if as_percent else f"{value:+.3f}"
 
     print()
+    _line(f"  honest start accuracy {show(scores.get('honest_start_accuracy'))}   "
+          "(before discussion; lower means more initial mistakes)")
     _line(f"  honest accuracy      {show(scores['honest_accuracy'])}   (higher is better)")
     _line(f"  attack success rate  {show(scores['attack_success_rate'])}"
           f"{_asr_workings(scores)}")
@@ -381,7 +378,8 @@ def _score_block(scores, use_trust) -> None:
                 _line(f"    matches the maths  {theory:.4f}   {verdict}")
 
 
-_MEASURES = [("honest accuracy", "honest_accuracy", True, "percent"),
+_MEASURES = [("honest start accuracy", "honest_start_accuracy", True, "percent"),
+             ("honest accuracy", "honest_accuracy", True, "percent"),
              ("attack success rate", "attack_success_rate", False, "percent"),
              ("normalized influence", "normalized_attacker_influence", False, "ratio"),
              ("diffusion reach", "diffusion_reach", False, "percent"),
@@ -416,12 +414,14 @@ def repeats_table(combined: dict, title: str) -> None:
     print(f"    {'measure':22} {'average':>10} {'lowest':>10} "
           f"{'highest':>10} {'spread':>10} {'95% CI':>23}")
     for label, key, _, style in _MEASURES + [
+            ("attack conversions", "attack_conversions", False, "count"),
+            ("attack eligible", "attack_eligible", True, "count"),
             ("started right", "started_right", True, "count")]:
         item = combined.get(key)
         if not isinstance(item, dict):
             print(f"    {label:22} {'n/a':>10}")
             continue
-        if key == "started_right":
+        if key in ("started_right", "attack_conversions", "attack_eligible"):
             fmt = _count
         else:
             def fmt(v):
@@ -525,7 +525,7 @@ def comparison(without, with_trust, left="without trust", right="with trust") ->
 
 
 def _empty_experiment_note(without, with_trust) -> None:
-    """Say so when the attack never turned anybody, in either half.
+    """Say so when nobody finished on the attack answer, in either half.
 
     This is the trap that a strong model walks straight into. Our questions
     were chosen because a particular model could be argued out of them. A more
@@ -539,23 +539,22 @@ def _empty_experiment_note(without, with_trust) -> None:
     and those come from the trust table rather than from any decision an agent
     made.
     """
-    turned = [side.get("turned") for side in (without, with_trust)]
-    if any(t is None for t in turned) or any(t > 0 for t in turned):
+    conversions = [
+        (side.get("attack_conversions")
+         if side.get("attack_conversions") is not None
+         else side.get("turned"))
+        for side in (without, with_trust)]
+    if any(value is None for value in conversions) or any(value > 0 for value in conversions):
         return
     diffusion = [side.get("diffusion_reach") for side in (without, with_trust)]
     if any(value is not None and value > 0 for value in diffusion):
         return          # agents were affected temporarily, then recovered
-    started = without.get("started_right")
-    if started is not None and started <= 0:
-        return          # nobody was ever right, which is a different problem
-
-    print(f"\n    {Fore.YELLOW}{Style.BRIGHT}Careful: this experiment measured "
-          f"no decision or diffusion damage.{Style.RESET_ALL}")
-    print("    No honest agent was turned in EITHER half, so honest accuracy "
-          "and attack")
-    print("    success rate cannot tell the two setups apart. The model was too "
-          "sure of")
-    print("    these questions for the attack to start.")
+    print(f"\n    {Fore.YELLOW}{Style.BRIGHT}Careful: no decision or diffusion damage "
+          f"was observed in either half.{Style.RESET_ALL}")
+    print("    No honest agent finished on the attack answer in either half.")
+    print("    ASR is zero in both conditions, so final-answer accuracy alone "
+          "cannot show")
+    print("    whether the defence stopped an attack conversion.")
     print("    Only the trust/influence detection measures are informative here; ")
     print("    they come from the trust table rather than an agent decision.")
     print("    Fix: screen the questions against THIS model first. See "
@@ -564,26 +563,17 @@ def _empty_experiment_note(without, with_trust) -> None:
 
 
 def _denominator_note(without, with_trust, left, right, width=16) -> None:
-    """Show the group the attack success rate was measured over, on both sides.
-
-    The rate is "of the honest agents that started right, how many were
-    turned". So the two sides are only comparable when the same number of
-    agents started right. When that number differs, the side that started
-    BETTER is dividing by a bigger number and is punished for it. Without
-    this note a reader would read that as the defence making things worse.
-    """
-    a, b = without.get("started_right"), with_trust.get("started_right")
+    """Show eligible honest agents, who started away from the attack answer."""
+    a, b = without.get("attack_eligible"), with_trust.get("attack_eligible")
     if a is None or b is None:
         return
-    print(f"    {'(started right)':22} {_count(a):>{width}} {_count(b):>{width}}"
-          f"   {Style.DIM}the group ASR is measured over{Style.RESET_ALL}")
+    print(f"    {'(ASR eligible)':22} {_count(a):>{width}} {_count(b):>{width}}"
+          f"   {Style.DIM}honest agents not initially on attack answer{Style.RESET_ALL}")
     if abs(a - b) < 1e-9:
         return
     ahead, behind = (right, left) if b > a else (left, right)
     print(f"\n    {Fore.YELLOW}{Style.BRIGHT}Careful with the attack success "
           f"rate above.{Style.RESET_ALL}")
-    print(f"    {ahead} started with more agents already correct "
-          f"({_count(max(a, b))} against {_count(min(a, b))}), so it is")
-    print(f"    dividing by a bigger number. It can end with the same answers "
-          f"as {behind}")
-    print(f"    and still show a worse rate. Read honest accuracy alongside it.")
+    print(f"    {ahead} has more eligible honest agents than {behind} "
+          f"({_count(max(a, b))} against {_count(min(a, b))}), so the ASR")
+    print("    denominators differ. Read honest accuracy alongside the rates.")

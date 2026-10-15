@@ -1,4 +1,4 @@
-"""Save a run to one JSON file.
+"""Save a run to one JSON file, checkpointed as it progresses.
 
 Turned on with `--result json` on the command line. Everything the terminal
 shows also goes in here, plus the performance numbers, so a run can be checked
@@ -18,7 +18,7 @@ from pathlib import Path
 
 
 class Results:
-    """Collects everything during a run, then writes it out at the end."""
+    """Collect run details and atomically save checkpoints and final results."""
 
     def __init__(self, cfg, agents, liars):
         self.data = {
@@ -43,8 +43,9 @@ class Results:
                 },
             },
             "agents": [
-                {"name": n, "role": "liar" if n in liars else "honest"}
-                for n in agents
+                {"name": n, "seat": index,
+                 "role": "liar" if n in liars else "honest"}
+                for index, n in enumerate(agents)
             ],
             "questions": [],
             "summary": {},
@@ -74,8 +75,13 @@ class Results:
             "rounds": [],
             "final_answers": {},
             "scores": {},
+            "honest_error_events": [],
         }
         self.data["questions"].append(self._question)
+
+    def add_honest_error_events(self, events):
+        if self._question is not None:
+            self._question["honest_error_events"] = list(events)
 
     def discard_question(self):
         """Throw away the question being recorded right now.
@@ -117,6 +123,11 @@ class Results:
             "agents": {
                 name: {
                     "answer": a.answer,
+                    "model_answer_before_enforcement": getattr(a, "model_answer", a.answer),
+                    "forced_answer": (getattr(a, "wrong_answer", "")
+                                      if getattr(a, "lies", False) else None),
+                    "initial_error_answer": (
+                        getattr(a, "initial_error_answer", "") or None),
                     "confidence": round(a.belief.get(a.answer, 1.0), 4),
                     "belief": {k: round(v, 4) for k, v in a.belief.items()},
                 }
@@ -173,7 +184,9 @@ class Results:
 
     # ----------------------------------------------------------- checkpoints
 
-    def mark_progress(self, questions_done, trust=None, rows=None, failed=()):
+    def mark_progress(self, questions_done, trust=None, rows=None, failed=(),
+                      repeat_number=1, completed_repeats=(),
+                      completed_left_repeats=()):
         """Record enough state to carry an interrupted run on from here.
 
         `trust` is stored UNROUNDED on purpose. Everywhere else in this file a
@@ -184,8 +197,12 @@ class Results:
         """
         self.data["progress"] = {
             "complete": False,
+            "repeat_number": repeat_number,
             "questions_done": questions_done,
             "failed_questions": list(failed),
+            "completed_repeats": [dict(run) for run in completed_repeats],
+            "completed_left_repeats": [dict(run)
+                                       for run in completed_left_repeats],
             "trust": ({a: dict(row) for a, row in trust.items()}
                       if trust is not None else None),
             "rows": list(rows) if rows is not None else None,
@@ -200,6 +217,8 @@ class Results:
         """
         done = self.data.get("progress", {}).get(
             "questions_done", len(self.data["questions"]))
+        if self.data.get("repeats"):
+            done = len(self.data["questions"])
         self.data["progress"] = {
             "complete": True,
             "questions_done": done,
@@ -221,12 +240,13 @@ class Results:
 
     def save(self, folder="results", run_name="") -> str:
         Path(folder).mkdir(parents=True, exist_ok=True)
-        trust_path = Path(folder) / "trust_log.jsonl"
+        name = run_name or f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        trust_name = f"{name}_trust_log.jsonl" if run_name else "trust_log.jsonl"
+        trust_path = Path(folder) / trust_name
         with trust_path.open("a", encoding="utf-8") as stream:
             for record in self._trust_log[self._trust_log_written:]:
                 stream.write(json.dumps(record, ensure_ascii=False) + "\n")
         self._trust_log_written = len(self._trust_log)
-        name = run_name or f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         path = Path(folder) / f"{name}.json"
         # Write alongside the target and rename over it. Checkpointing happens
         # after every question now, so a crash lands mid-write sooner or later;

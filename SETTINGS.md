@@ -113,7 +113,7 @@ python -m unittest discover -s tests
 | `--share` | `answer` or `both` | What agents send each other. Overrides the config file | use `both` to see if reasoning helps |
 | `--provider` | `ollama` or `deepseek` | Where the model runs. Overrides the config file | switch between offline and the API without editing anything |
 | `--model` | a model name | Which model to use. Overrides the config file | try a different model on the same setup |
-| `--result` | `json` | Save the whole run to `results/` | whenever you want to keep the numbers |
+| `--result` | `json` | Save the run under `results_dir` (default `results/`) | whenever you want to keep the numbers or resume after an interruption |
 
 Switching provider without naming a model picks that provider's default model,
 so an ollama model name is never sent to the API by mistake:
@@ -145,7 +145,7 @@ questions:
 Or read them from a file instead:
 
 ```yaml
-questions_file: "data/tricky_questions_100.yaml"   # .yaml or .jsonl
+questions_file: "data/questions_test_50.jsonl"   # .yaml or .jsonl
 max_questions: 10                       # use only the first few
 ```
 
@@ -402,9 +402,15 @@ you are studying the traits themselves.
 |---|---|---|---|
 | `parallel` | true | `true` | all agents think at once. Results are proven identical |
 | `repeats` | 1 | **5** for anything you report | runs the whole experiment 5 times and averages it |
-| `run_name` | `""` | a name like `"exp1"` | names the result file |
+| `run_name` | `""` | a name like `"exp1"` | names the result file and enables checkpoint resume |
 | `skip_done` | false | `true` for long batches | skips a run that already finished |
 | `hear_yourself` | false | `false` | an agent counts its own view as one of its sources |
+
+For `--result json`, give long runs a stable `run_name`. Single runs and plain
+repeat series save after every completed question, including the current repeat
+and already completed repeats. If the provider runs out of credit or a connection
+fails, rerun the same command to resume. `skip_done: true` skips finished runs
+but still resumes an unfinished checkpoint.
 
 ### `repeats` — do not report a single run
 
@@ -485,7 +491,7 @@ agents: 4
 rounds: 5
 topology: "mesh"
 seed: 1
-questions_file: "data/tricky_questions_100.yaml"
+questions_file: "data/questions_test_50.jsonl"
 max_questions: 3
 attackers: 1
 attacker_places: "random"
@@ -521,7 +527,7 @@ attacker_places: "center"
 ```yaml
 sleeper: true
 warmup: 2
-questions_file: "data/tricky_questions_100.yaml"
+questions_file: "data/questions_test_50.jsonl"
 max_questions: 5
 weight_consist: 0.34    # a sleeper changes, so this signal earns its place here
 weight_agree: 0.33
@@ -574,9 +580,9 @@ An attack experiment only means something if the attack can work. If no honest
 agent ever changes its mind, both halves score 100% accuracy and 0% attack
 success, and the comparison has measured nothing. The table still looks clean.
 
-`data/tricky_questions_100.yaml` is designed to contain plausible wrong answers,
-but susceptibility is model-dependent. Screen it against the exact model used in
-the final experiment and retain the per-question ASR denominator in the results.
+`data/questions_test_50.jsonl` is the fixed question set used for the current
+attacker-count experiment. Susceptibility remains model-dependent; the saved runs
+retain per-question attack eligibility and conversions for the ASR denominator.
 
 Screen your questions against the model you will actually use. The measurement
 is simple enough to do by hand: give one honest agent the correct answer, have

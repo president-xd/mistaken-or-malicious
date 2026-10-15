@@ -37,6 +37,24 @@ import math
 NEUTRAL = 0.5
 
 
+def responsive_consist(previous: str | None, current: str,
+                       visible: list[str] | tuple[str, ...] | dict[str, str],
+                       round_number: int) -> float:
+    """Score an answer by support for the answer visible in that round.
+
+    Keeping an answer is not automatically good: it is good only when the
+    visible group backed that answer.  A changed answer is scored against the
+    support for its new answer.  Round one has no prior answer and is neutral.
+    """
+    if round_number <= 1:
+        return NEUTRAL
+    answers = list(visible.values()) if isinstance(visible, dict) else list(visible)
+    if not answers:
+        return NEUTRAL
+    target = current if previous is None or current != previous else previous
+    return sum(answer == target for answer in answers) / len(answers)
+
+
 # --------------------------------------------------------------- basic tools
 
 def similarity(a: list[float], b: list[float]) -> float:

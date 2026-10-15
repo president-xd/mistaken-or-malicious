@@ -1,0 +1,992 @@
+[
+  {
+    "id": "new-001",
+    "category": "history",
+    "text": "Which was earlier: the first Olympic Games or the first modern telephone?\nOptions: A) telephone B) cannot determine C) both D) neither E) Olympic Games",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "telephone",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-002",
+    "category": "history",
+    "text": "Which is older: the Roman Empire or the printing press in Europe?\nOptions: A) cannot determine B) both C) neither D) Roman Empire E) printing press",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "printing press",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-003",
+    "category": "history",
+    "text": "Which came first: the French Revolution or the American Declaration of Independence?\nOptions: A) both B) neither C) American Declaration D) French Revolution E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "French Revolution",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "D"
+  },
+  {
+    "id": "new-004",
+    "category": "history",
+    "text": "Which lasted longer: the Ming dynasty or the Roman Republic?\nOptions: A) neither B) Ming dynasty C) Roman Republic D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "Roman Republic",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 0.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-005",
+    "category": "history",
+    "text": "Which was earlier: the end of the Western Roman Empire or the invention of the compass?\nOptions: A) Western Roman Empire B) compass C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "compass",
+    "samples": [
+      "B",
+      "B",
+      "B"
+    ],
+    "solo_accuracy": 0.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-006",
+    "category": "history",
+    "text": "Which is older: the University of Bologna or the Aztec Empire?\nOptions: A) Aztec Empire B) cannot determine C) both D) neither E) University of Bologna",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "Aztec Empire",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-007",
+    "category": "history",
+    "text": "Which happened first: the eruption of Krakatoa or the invention of the telephone?\nOptions: A) cannot determine B) both C) neither D) telephone E) Krakatoa",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "Krakatoa",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-008",
+    "category": "history",
+    "text": "Which was earlier: the first successful powered flight or the first World War?\nOptions: A) both B) neither C) powered flight D) World War I E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "World War I",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "D"
+  },
+  {
+    "id": "new-009",
+    "category": "history",
+    "text": "Which is farther north: London or Berlin?\nOptions: A) neither B) London C) Berlin D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "Berlin",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 0.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-010",
+    "category": "history",
+    "text": "Which is farther west: Alaska or Hawaii?\nOptions: A) Alaska B) Hawaii C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "Hawaii",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-011",
+    "category": "history",
+    "text": "Which country is larger by area: Argentina or Kazakhstan?\nOptions: A) Argentina B) cannot determine C) both D) neither E) Kazakhstan",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "Argentina",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 0.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-012",
+    "category": "history",
+    "text": "Which is older as a written language: Latin or English?\nOptions: A) cannot determine B) both C) neither D) Latin E) English",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "English",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-013",
+    "category": "history",
+    "text": "Which happened earlier: the first Moon landing or the fall of the Berlin Wall?\nOptions: A) both B) neither C) Moon landing D) Berlin Wall fall E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "Berlin Wall fall",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "D"
+  },
+  {
+    "id": "new-014",
+    "category": "history",
+    "text": "Which was founded first: Harvard University or the Royal Society?\nOptions: A) neither B) Harvard University C) Royal Society D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "Royal Society",
+    "samples": [
+      "B",
+      "B",
+      "B"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-015",
+    "category": "history",
+    "text": "Which is older: the Great Pyramid or the city of Rome?\nOptions: A) Great Pyramid B) city of Rome C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "city of Rome",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-016",
+    "category": "science",
+    "text": "Which has greater mass: a kilogram of lead or a kilogram of feathers?\nOptions: A) lead B) cannot determine C) both D) neither E) same mass",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "lead",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-017",
+    "category": "science",
+    "text": "Which reaches the ground first in a vacuum: a hammer or a feather?\nOptions: A) cannot determine B) both C) neither D) same time E) hammer",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "hammer",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-018",
+    "category": "science",
+    "text": "Which is closer to Earth: the Moon or the Sun?\nOptions: A) both B) neither C) Moon D) Sun E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "Sun",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "D"
+  },
+  {
+    "id": "new-019",
+    "category": "science",
+    "text": "Which contains more atoms: a mole of water or a mole of iron?\nOptions: A) neither B) same number C) water D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "water",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 0.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-020",
+    "category": "science",
+    "text": "Which has higher frequency: red light or blue light?\nOptions: A) blue light B) red light C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "red light",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-021",
+    "category": "science",
+    "text": "Which has a longer wavelength: red light or blue light?\nOptions: A) blue light B) cannot determine C) both D) neither E) red light",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "blue light",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-022",
+    "category": "science",
+    "text": "Which is denser: ice or liquid water?\nOptions: A) cannot determine B) both C) neither D) liquid water E) ice",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "ice",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-023",
+    "category": "science",
+    "text": "Which organ primarily filters waste from blood: the kidneys or the lungs?\nOptions: A) both B) neither C) kidneys D) lungs E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "lungs",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "D"
+  },
+  {
+    "id": "new-024",
+    "category": "science",
+    "text": "Which carries oxygen in blood: hemoglobin or insulin?\nOptions: A) neither B) hemoglobin C) insulin D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "insulin",
+    "samples": [
+      "B",
+      "B",
+      "B"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-025",
+    "category": "science",
+    "text": "Which has more genetic material in a typical human cell: mitochondria or the nucleus?\nOptions: A) nucleus B) mitochondria C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "mitochondria",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-026",
+    "category": "science",
+    "text": "Which is warmer in a greenhouse: the inside or the outside?\nOptions: A) outside B) cannot determine C) both D) neither E) inside",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "outside",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-027",
+    "category": "science",
+    "text": "Which increases when altitude increases: atmospheric pressure or distance from Earth centre?\nOptions: A) cannot determine B) both C) neither D) distance from Earth centre E) atmospheric pressure",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "atmospheric pressure",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-028",
+    "category": "science",
+    "text": "Which direction does a compass needle point approximately: magnetic north or geographic south?\nOptions: A) both B) neither C) magnetic north D) geographic south E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "geographic south",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "D"
+  },
+  {
+    "id": "new-029",
+    "category": "science",
+    "text": "Which is a mammal: a dolphin or a shark?\nOptions: A) neither B) dolphin C) shark D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "shark",
+    "samples": [
+      "B",
+      "B",
+      "B"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-030",
+    "category": "science",
+    "text": "Which process makes sugar in plants: photosynthesis or respiration?\nOptions: A) photosynthesis B) respiration C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "respiration",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-031",
+    "category": "math",
+    "text": "Which is larger: 1/3 or 0.3?\nOptions: A) 0.3 B) cannot determine C) both D) neither E) 1/3",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "0.3",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-032",
+    "category": "math",
+    "text": "Which is larger: 0.9 or 0.09?\nOptions: A) cannot determine B) both C) neither D) 0.9 E) 0.09",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "0.09",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-033",
+    "category": "math",
+    "text": "Which is greater: the mean or median of 1, 2, 3, 100?\nOptions: A) both B) neither C) mean D) median E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "median",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "D"
+  },
+  {
+    "id": "new-034",
+    "category": "math",
+    "text": "Which is more likely with two dice: a total of 7 or a total of 6?\nOptions: A) neither B) 7 C) 6 D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "6",
+    "samples": [
+      "B",
+      "B",
+      "B"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-035",
+    "category": "math",
+    "text": "Which is larger: 2^10 or 10^2?\nOptions: A) 2^10 B) 10^2 C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "10^2",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-036",
+    "category": "math",
+    "text": "Which is the larger discount: 20% off once or 10% off twice?\nOptions: A) 10% twice B) cannot determine C) both D) neither E) 20% once",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "10% twice",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-037",
+    "category": "math",
+    "text": "Which is faster: doubling a quantity or increasing it by 100%?\nOptions: A) cannot determine B) both C) neither D) same E) doubling",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "doubling",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-038",
+    "category": "math",
+    "text": "Which is larger: the perimeter of a square with side 4 or its area?\nOptions: A) both B) neither C) area D) perimeter E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "perimeter",
+    "samples": [
+      "B",
+      "B",
+      "B"
+    ],
+    "solo_accuracy": 0.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-039",
+    "category": "math",
+    "text": "Which average speed is correct for equal distances at 30 and 60 km/h: 45 or 40 km/h?\nOptions: A) neither B) 40 C) 45 D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "45",
+    "samples": [
+      "B",
+      "B",
+      "B"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-040",
+    "category": "math",
+    "text": "Which is more likely: at least one six in two dice rolls or two sixes?\nOptions: A) at least one six B) two sixes C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "two sixes",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-041",
+    "category": "math",
+    "text": "Which is larger: 10% of 100 or 100% of 10?\nOptions: A) 100% of 10 B) cannot determine C) both D) neither E) same",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "100% of 10",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-042",
+    "category": "math",
+    "text": "Which is greater: the chance of heads on one fair coin or two heads in two tosses?\nOptions: A) cannot determine B) both C) neither D) one head E) two heads",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "two heads",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-043",
+    "category": "math",
+    "text": "Which is closer to zero: -0.2 or 0.1?\nOptions: A) both B) neither C) 0.1 D) -0.2 E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "-0.2",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "D"
+  },
+  {
+    "id": "new-044",
+    "category": "math",
+    "text": "Which is larger: a 50% increase followed by a 50% decrease, or the original?\nOptions: A) neither B) original C) the changed value D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "the changed value",
+    "samples": [
+      "B",
+      "B",
+      "B"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-045",
+    "category": "math",
+    "text": "Which is the median of 1, 2, 100: 2 or 34.33?\nOptions: A) 2 B) 34.33 C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "34.33",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-046",
+    "category": "math",
+    "text": "Which is more informative about a skewed dataset: the mean or the median?\nOptions: A) mean B) cannot determine C) both D) neither E) median",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "mean",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-047",
+    "category": "security",
+    "text": "Which protects a password database better: salted hashing or plain encryption with one shared key?\nOptions: A) cannot determine B) both C) neither D) salted hashing E) shared-key encryption",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "shared-key encryption",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-048",
+    "category": "security",
+    "text": "Which does HTTPS primarily protect: transport confidentiality or endpoint malware?\nOptions: A) both B) neither C) transport confidentiality D) endpoint malware E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "endpoint malware",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "D"
+  },
+  {
+    "id": "new-049",
+    "category": "security",
+    "text": "Which is safer for an untrusted file: parsing it as data or executing it as code?\nOptions: A) neither B) parsing as data C) executing as code D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "executing as code",
+    "samples": [
+      "B",
+      "B",
+      "B"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-050",
+    "category": "security",
+    "text": "Which is usually stronger: a long unique password or a short reused password?\nOptions: A) long unique password B) short reused password C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "short reused password",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-051",
+    "category": "security",
+    "text": "Which does a checksum provide: integrity evidence or proof of author identity?\nOptions: A) author identity B) cannot determine C) both D) neither E) integrity evidence",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "author identity",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-052",
+    "category": "security",
+    "text": "Which stops a stolen session cookie more directly: cookie invalidation or a new login password?\nOptions: A) cannot determine B) both C) neither D) cookie invalidation E) new password",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "new password",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-053",
+    "category": "security",
+    "text": "Which is safer against SQL injection: parameterized queries or string concatenation?\nOptions: A) both B) neither C) parameterized queries D) string concatenation E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "string concatenation",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "D"
+  },
+  {
+    "id": "new-054",
+    "category": "security",
+    "text": "Which is more private on a network: encrypted DNS or plain DNS?\nOptions: A) neither B) encrypted DNS C) plain DNS D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "plain DNS",
+    "samples": [
+      "B",
+      "B",
+      "B"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-055",
+    "category": "security",
+    "text": "Which prevents all phishing: two-factor authentication or neither?\nOptions: A) neither B) two-factor authentication C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "two-factor authentication",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-056",
+    "category": "security",
+    "text": "Which is more resistant to guessing: a random 16-character password or a memorable 8-character password?\nOptions: A) memorable 8-character password B) cannot determine C) both D) neither E) random 16-character password",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "memorable 8-character password",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-057",
+    "category": "reasoning",
+    "text": "If all A are B and no B are C, can any A be C?\nOptions: A) cannot determine B) both C) neither D) no E) yes",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "yes",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-058",
+    "category": "reasoning",
+    "text": "If some A are B and some B are C, must some A be C?\nOptions: A) both B) neither C) no D) yes E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "yes",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "D"
+  },
+  {
+    "id": "new-059",
+    "category": "reasoning",
+    "text": "If a test is positive 99% of the time for sick people, does that alone give the chance of sickness after a positive?\nOptions: A) neither B) no C) yes D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "yes",
+    "samples": [
+      "B",
+      "B",
+      "B"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-060",
+    "category": "reasoning",
+    "text": "If two events are mutually exclusive and both non-zero, can they be independent?\nOptions: A) no B) yes C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "yes",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-061",
+    "category": "reasoning",
+    "text": "If a treatment works in every subgroup, must it work better overall?\nOptions: A) yes B) cannot determine C) both D) neither E) no",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "yes",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  },
+  {
+    "id": "new-062",
+    "category": "reasoning",
+    "text": "If a correlation is strong, does it by itself prove causation?\nOptions: A) cannot determine B) both C) neither D) no E) yes",
+    "answer": "D",
+    "wrong": "E",
+    "wrong_text": "yes",
+    "samples": [
+      "D",
+      "D",
+      "D"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "E"
+  },
+  {
+    "id": "new-063",
+    "category": "reasoning",
+    "text": "If an argument has a true conclusion, must its reasoning be valid?\nOptions: A) both B) neither C) no D) yes E) cannot determine",
+    "answer": "C",
+    "wrong": "D",
+    "wrong_text": "yes",
+    "samples": [
+      "C",
+      "C",
+      "C"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "D"
+  },
+  {
+    "id": "new-064",
+    "category": "reasoning",
+    "text": "If a coin landed heads five times, is tails guaranteed next?\nOptions: A) neither B) no C) yes D) cannot determine E) both",
+    "answer": "B",
+    "wrong": "C",
+    "wrong_text": "yes",
+    "samples": [
+      "B",
+      "B",
+      "B"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "C"
+  },
+  {
+    "id": "new-065",
+    "category": "reasoning",
+    "text": "If a model is accurate on average, must it be accurate for every subgroup?\nOptions: A) no B) yes C) cannot determine D) both E) neither",
+    "answer": "A",
+    "wrong": "B",
+    "wrong_text": "yes",
+    "samples": [
+      "A",
+      "A",
+      "A"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "B"
+  },
+  {
+    "id": "new-066",
+    "category": "reasoning",
+    "text": "If two claims are both plausible, does that make both true?\nOptions: A) yes B) cannot determine C) both D) neither E) no",
+    "answer": "E",
+    "wrong": "A",
+    "wrong_text": "yes",
+    "samples": [
+      "E",
+      "E",
+      "E"
+    ],
+    "solo_accuracy": 1.0,
+    "most_frequent_wrong": "A"
+  }
+]

@@ -1,0 +1,28 @@
+agents: 7
+topology: ring
+rounds: 5
+share: both
+answer_format: letter
+warmup: 0
+repeats: 3
+trust_weighting: both
+track_trust: true
+scenarios:
+  S0:
+    name: clean
+    attacker_places: ""
+  S1:
+    name: one attacker
+    attacker_places: "0"
+  S2:
+    name: adjacent attackers
+    attacker_places: "0,1"
+  S3:
+    name: separated attackers
+    attacker_places: "0,3"
+  S4:
+    name: three adjacent attackers
+    attacker_places: "0,1,2"
+  S5:
+    name: alternating attackers
+    attacker_places: "0,2,4"

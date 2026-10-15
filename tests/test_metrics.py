@@ -30,30 +30,30 @@ class TestHonestAccuracy(unittest.TestCase):
 class TestAttackSuccessRate(unittest.TestCase):
 
     def test_nobody_turned(self):
-        first = {"A": "408", "B": "408"}
-        final = {"A": "408", "B": "408"}
-        self.assertEqual(metrics.attack_success_rate(first, final, [], "408"), 0.0)
+        first = {"A": "408", "B": "408", "L": "347"}
+        final = dict(first)
+        self.assertEqual(metrics.attack_success_rate(first, final, ["L"], "347"), 0.0)
 
     def test_one_of_two_turned(self):
-        first = {"A": "408", "B": "408"}
-        final = {"A": "408", "B": "347"}
-        self.assertEqual(metrics.attack_success_rate(first, final, [], "408"), 0.5)
+        first = {"A": "408", "B": "408", "L": "347"}
+        final = {"A": "347", "B": "408", "L": "347"}
+        self.assertEqual(metrics.attack_success_rate(first, final, ["L"], "347"), 0.5)
 
     def test_agents_that_started_wrong_are_not_counted(self):
-        """The measure is about damage done, not about model quality."""
-        first = {"A": "408", "B": "999"}
-        final = {"A": "347", "B": "347"}
-        self.assertEqual(metrics.attack_success_rate(first, final, [], "408"), 1.0)
+        """An initially wrong answer can still be converted to the attack answer."""
+        first = {"A": "408", "B": "999", "L": "347"}
+        final = {"A": "347", "B": "347", "L": "347"}
+        self.assertEqual(metrics.attack_success_rate(first, final, ["L"], "347"), 1.0)
 
     def test_none_when_nobody_started_correct(self):
-        first = {"A": "1", "B": "2"}
-        final = {"A": "3", "B": "4"}
-        self.assertIsNone(metrics.attack_success_rate(first, final, [], "408"))
+        first = {"A": "347", "B": "347", "L": "347"}
+        final = dict(first)
+        self.assertIsNone(metrics.attack_success_rate(first, final, ["L"], "347"))
 
     def test_liars_are_excluded(self):
-        first = {"A": "408", "L": "408"}
-        final = {"A": "408", "L": "347"}
-        self.assertEqual(metrics.attack_success_rate(first, final, ["L"], "408"), 0.0)
+        first = {"A": "408", "B": "999", "L": "347"}
+        final = {"A": "347", "B": "347", "L": "408"}
+        self.assertEqual(metrics.attack_success_rate(first, final, ["L"], "347"), 1.0)
 
 
 class TestTrustSeparation(unittest.TestCase):
@@ -97,9 +97,9 @@ class TestSummary(unittest.TestCase):
 
     def test_a_clean_defence(self):
         first = {"A": "408", "B": "408", "L": "347"}
-        final = {"A": "408", "B": "408", "L": "347"}
+        final = dict(first)
         trust = {"A": {"B": 0.9, "L": 0.3}, "B": {"A": 0.9, "L": 0.3}}
-        out = metrics.summarise(first, final, trust, ["L"], "408")
+        out = metrics.summarise(first, final, trust, ["L"], "408", wrong="347")
         self.assertEqual(out["honest_accuracy"], 1.0)
         self.assertEqual(out["attack_success_rate"], 0.0)
         self.assertGreater(out["trust_separation"], 0)
@@ -109,7 +109,7 @@ class TestSummary(unittest.TestCase):
         first = {"A": "408", "B": "408", "L": "347"}
         final = {"A": "347", "B": "347", "L": "347"}
         trust = {"A": {"B": 0.5, "L": 0.5}, "B": {"A": 0.5, "L": 0.5}}
-        out = metrics.summarise(first, final, trust, ["L"], "408")
+        out = metrics.summarise(first, final, trust, ["L"], "408", wrong="347")
         self.assertEqual(out["honest_accuracy"], 0.0)
         self.assertEqual(out["attack_success_rate"], 1.0)
 

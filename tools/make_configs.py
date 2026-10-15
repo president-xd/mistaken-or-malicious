@@ -22,10 +22,9 @@ SCENARIOS = {
 }
 
 CONDITIONS = (
-    ("clean_defence_off", "00_clean", None, "off"),
-    ("clean_defence_on", "00_clean", None, "broadcast"),
-    ("attack_defence_off", "01_attack_defence_off", "scenario", "off"),
-    ("attack_defence_on", "02_attack_defence_on", "scenario", "broadcast"),
+    ("clean_no_attackers", "01_clean_no_attackers", None, "off", False),
+    ("attack_defence_off", "02_attack_defence_off", "scenario", "off", False),
+    ("attack_defence_on", "03_attack_defence_on", "scenario", "broadcast", True),
 )
 
 
@@ -86,7 +85,7 @@ def generate(root: Path, output_root: Path) -> list[Path]:
     commit = git_commit(root)
     generated: list[Path] = []
 
-    for condition_name, condition_dir, scenario_mode, trust_share in CONDITIONS:
+    for condition_name, condition_dir, scenario_mode, trust_share, trust in CONDITIONS:
         scenarios = ([("", [])] if scenario_mode is None
                      else list(SCENARIOS.items()))
         for scenario, seats in scenarios:
@@ -95,6 +94,7 @@ def generate(root: Path, output_root: Path) -> list[Path]:
                 "attackers": len(seats),
                 "attacker_places": ",".join(str(seat) for seat in seats),
                 "trust_share": trust_share,
+                "trust": trust,
             })
             if scenario:
                 folder = output_root / condition_dir / scenario
@@ -104,7 +104,8 @@ def generate(root: Path, output_root: Path) -> list[Path]:
                 run_name = f"ring_{condition_name}"
             folder.mkdir(parents=True, exist_ok=True)
             settings["run_name"] = run_name
-            settings["results_dir"] = str(folder.relative_to(root))
+            settings["results_dir"] = str(
+                folder.relative_to(root) if folder.is_relative_to(root) else folder)
             config_path = folder / "config.yaml"
             config_path.write_text(
                 yaml.safe_dump(settings, sort_keys=False), encoding="utf-8"

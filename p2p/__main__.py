@@ -79,11 +79,15 @@ def main() -> None:
             from .results import load_checkpoint
             saved = load_checkpoint(cfg.run_name, cfg.results_dir)
             if saved:
-                n = saved.get("progress", {}).get("questions_done", 0)
-                print(f"\n[SAVED] {n} question(s) were written to "
-                      f"results/{cfg.run_name}.json before this failure.\n"
-                      f"        Run the same command again to carry on from "
-                      f"question {n + 1}.")
+                progress = saved.get("progress", {})
+                n = progress.get("questions_done", 0)
+                repeat_number = progress.get("repeat_number", 1)
+                path = f"{cfg.results_dir}/{cfg.run_name}.json"
+                print(f"\n[SAVED] Results and checkpoint are at {path}.\n"
+                      f"        {len(progress.get('completed_repeats', []))} "
+                      f"repeat(s) complete; repeat {repeat_number} has "
+                      f"{n} question(s) saved.\n"
+                      f"        Run the same command again to resume.")
         text = str(exc).lower()
         if cfg.provider == "deepseek" and any(
                 k in text for k in ("401", "403", "unauthorized", "api key")):

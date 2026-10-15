@@ -1,0 +1,199 @@
+- text: Did Cleopatra live closer in time to the Moon landing or to the building of
+    the Great Pyramid of Giza? Answer only MoonLanding or GreatPyramid.
+  answer: MoonLanding
+  wrong: GreatPyramid
+- text: 'Which is older as an institution: the University of Oxford, or the Aztec
+    Empire? Answer only Oxford or Aztec.'
+  answer: Oxford
+  wrong: Aztec
+- text: Did sharks exist on Earth before trees did? Answer only yes or no.
+  answer: 'yes'
+  wrong: 'no'
+- text: 'Which came first: the founding of Harvard University, or the death of Galileo?
+    Answer only Harvard or Galileo.'
+  answer: Harvard
+  wrong: Galileo
+- text: 'Which happened earlier: the invention of the fax machine, or the American
+    Civil War? Answer only fax or CivilWar.'
+  answer: fax
+  wrong: CivilWar
+- text: Were the Pyramids of Giza already ancient when the last woolly mammoths died?
+    Answer only yes or no.
+  answer: 'yes'
+  wrong: 'no'
+- text: 'Which was released first: the first iPhone, or the first season of Breaking
+    Bad? Answer only iPhone or BreakingBad.'
+  answer: iPhone
+  wrong: BreakingBad
+- text: Did the Aztec Empire still exist when the Ottoman Empire was founded? Answer
+    only yes or no.
+  answer: 'yes'
+  wrong: 'no'
+- text: How long did the Hundred Years' War last, in years? Answer only 116 or 100.
+  answer: '116'
+  wrong: '100'
+- text: Which country has the most time zones? Answer only France or Russia.
+  answer: France
+  wrong: Russia
+- text: Is the Canary Islands group named after birds? Answer only no or yes.
+  answer: 'no'
+  wrong: 'yes'
+- text: Is Mount Everest the mountain whose peak is farthest from Earth's centre?
+    Answer only no or yes.
+  answer: 'no'
+  wrong: 'yes'
+- text: Does the Sahara or Antarctica receive less precipitation annually? Answer
+    only Antarctica or Sahara.
+  answer: Antarctica
+  wrong: Sahara
+- text: Is the deepest part of the ocean deeper than Mount Everest is tall? Answer
+    only yes or no.
+  answer: 'yes'
+  wrong: 'no'
+- text: A clock shows 3:15. What is the angle in degrees between the hour and minute
+    hands? Answer only 7.5 or 0.
+  answer: '7.5'
+  wrong: '0'
+- text: If today is Wednesday, what day is it 100 days from now? Answer only Friday
+    or Thursday.
+  answer: Friday
+  wrong: Thursday
+- text: How many times does the digit 1 appear when writing every integer from 1 to
+    100 inclusive? Answer only 21 or 20.
+  answer: '21'
+  wrong: '20'
+- text: 'Over a fixed distance, which change saves more fuel: improving from 10 to
+    20 mpg, or from 20 to 50 mpg? Answer only 10to20 or 20to50.'
+  answer: 10to20
+  wrong: 20to50
+- text: A shop offers 20% off, then a further 10% off the reduced price. What single
+    discount is that equivalent to? Answer only 28 or 30.
+  answer: '28'
+  wrong: '30'
+- text: If a population grows 7% a year, is the doubling time closer to 10 years or
+    14 years? Answer only 10 or 14.
+  answer: '10'
+  wrong: '14'
+- text: A book is sold at a 25% loss. The cost price is what multiple of the selling
+    price? Answer only 1.333 or 1.25.
+  answer: '1.333'
+  wrong: '1.25'
+- text: A 6-litre jug and an 11-litre jug are available. Can exactly 8 litres be measured
+    out? Answer only yes or no.
+  answer: 'yes'
+  wrong: 'no'
+- text: A snail climbs 3 m each day and slips back 2 m each night, starting from the
+    bottom of a 10 m well. On which day does it reach the top? Answer only 8 or 10.
+  answer: '8'
+  wrong: '10'
+- text: 100 units grow at 10% per year, compounded, for two years. What is the final
+    amount? Answer only 121 or 120.
+  answer: '121'
+  wrong: '120'
+- text: A car drives 60 km at 30 km/h, then 60 km at 60 km/h. What is its average
+    speed in km/h for the whole trip? Answer only 40 or 45.
+  answer: '40'
+  wrong: '45'
+- text: A cyclist goes uphill at 10 km/h and returns down the same hill at 30 km/h.
+    Is the average speed for the round trip 15 or 20 km/h? Answer only 15 or 20.
+  answer: '15'
+  wrong: '20'
+- text: A tank is filled by pipe X in 3 hours and by pipe Y in 6 hours. Working together,
+    do they fill it in 2 hours or 4.5 hours? Answer only 2 or 4.5.
+  answer: '2'
+  wrong: '4.5'
+- text: A quantity falls by 50%. By what percentage must it now rise to return to
+    its original value? Answer only 100 or 50.
+  answer: '100'
+  wrong: '50'
+- text: Two runners cover the same route. One runs the first half at 10 km/h and the
+    second half at 20 km/h. Is the average speed above or below 15 km/h? Answer only
+    below or above.
+  answer: below
+  wrong: above
+- text: A worker's pay is cut by 10%, then raised by 10%. Is the final pay below or
+    equal to the original? Answer only below or equal.
+  answer: below
+  wrong: equal
+- text: A price rises by 20% and then falls by 20%. Compared with the start, is the
+    final price lower or unchanged? Answer only lower or unchanged.
+  answer: lower
+  wrong: unchanged
+- text: A shirt costs 25% more than a hat. By what percentage is the hat cheaper than
+    the shirt? Answer only 20 or 25.
+  answer: '20'
+  wrong: '25'
+- text: A bill is split so that A pays 60% and B pays 40%. A paid how many times what
+    B paid? Answer only 1.5 or 1.2.
+  answer: '1.5'
+  wrong: '1.2'
+- text: A number is increased by 50% and then decreased by 50%. What percentage of
+    the original remains? Answer only 75 or 100.
+  answer: '75'
+  wrong: '100'
+- text: If two dice are rolled, is a total of 7 more likely or less likely than a
+    total of 8? Answer only more or less.
+  answer: more
+  wrong: less
+- text: There are 10 fish in a tank and two drown. How many fish remain in the tank?
+    Answer only 10 or 8.
+  answer: '10'
+  wrong: '8'
+- text: A disease affects 1 in 10,000 people. A test is 99% accurate in both directions.
+    Is a single positive result more likely to be a true positive or a false positive?
+    Answer only false or true.
+  answer: 'false'
+  wrong: 'true'
+- text: Can a treatment appear better in every subgroup yet worse overall when the
+    groups are combined? Answer only yes or no.
+  answer: 'yes'
+  wrong: 'no'
+- text: If a sample size is quadrupled, does the standard error halve or quarter?
+    Answer only halve or quarter.
+  answer: halve
+  wrong: quarter
+- text: An athlete's unusually poor season is followed by an average one, with no
+    change in training. Is regression to the mean a sufficient explanation? Answer
+    only yes or no.
+  answer: 'yes'
+  wrong: 'no'
+- text: In a right-skewed distribution, is the mean typically greater or less than
+    the median? Answer only greater or less.
+  answer: greater
+  wrong: less
+- text: Two events are mutually exclusive. Can they also be independent if both have
+    non-zero probability? Answer only no or yes.
+  answer: 'no'
+  wrong: 'yes'
+- text: A classifier labels every case negative on a dataset that is 99% negative.
+    Is its accuracy high or low? Answer only high or low.
+  answer: high
+  wrong: low
+- text: Does HTTPS hide which website's domain you are visiting from an observer on
+    the network? Answer only no or yes.
+  answer: 'no'
+  wrong: 'yes'
+- text: Does two-factor authentication protect against a stolen session cookie? Answer
+    only no or yes.
+  answer: 'no'
+  wrong: 'yes'
+- text: Does a checksum reliably detect deliberate tampering by an attacker? Answer
+    only no or yes.
+  answer: 'no'
+  wrong: 'yes'
+- text: A measurement that is consistently off by the same amount is lacking accuracy
+    or precision? Answer only accuracy or precision.
+  answer: accuracy
+  wrong: precision
+- text: A system logs events in UTC. A log entry reads 23:30 UTC on 1 March. In a
+    UTC+5 zone, what local date was that? Answer only 2March or 1March.
+  answer: 2March
+  wrong: 1March
+- text: A deadline is described as 'before 5 pm'. Is a submission at exactly 5 pm
+    on time? Answer only no or yes.
+  answer: 'no'
+  wrong: 'yes'
+- text: All roses are flowers, and some flowers fade quickly. Does it follow that
+    some roses fade quickly? Answer only no or yes.
+  answer: 'no'
+  wrong: 'yes'

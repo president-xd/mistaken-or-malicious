@@ -1,5 +1,8 @@
 provider: deepseek
-model: deepseek-v4-pro
+model: deepseek-chat
+temperature: 0.7
+honest_error_rate: 0.2
+honest_error_seed: 1
 agents: 7
 topology: ring
 rounds: 5
