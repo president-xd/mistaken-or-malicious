@@ -26,7 +26,7 @@ ollama pull qwen2.5:14b
 ollama pull nomic-embed-text
 ```
 
-`qwen2.5:14b` is the best local model we measured — it is the only one that got
+`qwen2.5:14b` is the best local model we measured - it is the only one that got
 every answer right, kept the answer format every time, and defended a lie
 without giving the game away. `llama3.1:8b-instruct-q8_0` also works and is
 faster. A 1-billion model such as `llama3.2:1b` will run but is far too random
@@ -54,7 +54,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-That installs everything, for both providers. The tests need nothing else — they
+That installs everything, for both providers. The tests need nothing else - they
 call no model, so they run with Ollama switched off and no API key.
 
 ---
@@ -65,7 +65,7 @@ A local 8B model works but is slow and cannot do every job. The DeepSeek API is
 far more capable and answers several calls at once. Measured: **4 times faster**,
 because Ollama answers only a few calls at a time and DeepSeek does not.
 
-Your key goes in one of two places. **Never in `config.yaml`** — that file is
+Your key goes in one of two places. **Never in `config.yaml`** - that file is
 committed to git.
 
 **Either** a `.env` file next to `config.yaml`, copied from `.env.example`:
@@ -96,7 +96,7 @@ python -m p2p config.yaml --provider deepseek
 ```
 
 Before trusting any result from a new model, check your questions still work on
-it — see [section 12](#12-check-your-questions-before-you-trust-a-result).
+it - see [section 12](#12-check-your-questions-before-you-trust-a-result).
 
 ---
 
@@ -482,7 +482,7 @@ It cannot do otherwise: it never sees the correct answer, only who agrees with w
 When both hold, "disagrees with the group" and "is lying" are the same agents, and the
 defence works. When they do not hold, it does not fail safely. With three liars against
 one honest agent, trust in the honest agent falls to 0.084 while each liar rises to
-0.639 — the liars end up with **95.8%** of the attention against a fair share of 25%.
+0.639 - the liars end up with **95.8%** of the attention against a fair share of 25%.
 The defence silences the truth and amplifies the lie.
 
 Say this plainly whenever you write the method up. It is a precondition, not a result.
@@ -518,7 +518,7 @@ like it failed when it simply ran out of time.
 
 **Half the network lying is not just hard, it is undecidable.** With two agents saying
 one thing and two saying another, every agent receives exactly the same score, so trust
-separation is 0.000. The formula is not merely weak here — it has no basis at all on
+separation is 0.000. The formula is not merely weak here - it has no basis at all on
 which to prefer either pair. Raising `weight_anomaly` does not help.
 
 **When every agent gives a different answer, they all score 0.000 together.** Trust
@@ -528,7 +528,7 @@ exactly when you need it most.
 
 **Agents are scored using answers they cannot hear.** The behaviour score is worked out
 against every agent in the network, not against the ones a listener is connected to. In
-a mesh this makes no difference, because everyone hears everyone — which is where the
+a mesh this makes no difference, because everyone hears everyone - which is where the
 main results come from, so those stand. In a line of five agents it changes one agent's
 trust in another by up to **0.325** purely because of agents it never heard. It also
 means the answers travel peer to peer, but the scores are worked out centrally.
@@ -609,7 +609,7 @@ question the model will not budge on cannot be attacked, so it cannot test anyth
 
 Every model on the machine, put through the four jobs the agents actually do,
 using the real agent and the real prompts. Counts, not percentages, because the
-samples are small — two models only differ meaningfully when the gap is bigger
+samples are small - two models only differ meaningfully when the gap is bigger
 than one try.
 
 | model | right | format | defends a lie | graded belief | s/call |
@@ -637,7 +637,7 @@ wrong answer 3 times out of 3. A reasoning model reasons its way out of lying,
 so the liar never lies and no attack ever starts.
 
 **The format is solved.** All six models ended every reply with an ANSWER line,
-with no retries — including the reasoning model that writes long `<think>`
+with no retries - including the reasoning model that writes long `<think>`
 blocks first. That came from the prompt work and the retry, not from a bigger
 model.
 

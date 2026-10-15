@@ -199,7 +199,7 @@ half way through.
 ### Measured: what each model can do
 
 Every model on the machine, through the real agent and the real prompts. Counts,
-not percentages — two models only differ meaningfully when the gap is bigger
+not percentages - two models only differ meaningfully when the gap is bigger
 than one try.
 
 | model | right | format | defends a lie | graded belief | s/call |
@@ -224,7 +224,7 @@ so no attack ever starts.
 
 **Graded belief needs 14 billion.** Every model below that scored 0/2; both 14B
 models scored 2/2. Older versions of this file said graded belief fails at every
-size — that was measured with an unfair test that asked for a split belief on
+size - that was measured with an unfair test that asked for a split belief on
 plain fact questions, where holding at 100% is the correct answer.
 
 ### A warning about switching model
@@ -412,7 +412,7 @@ and already completed repeats. If the provider runs out of credit or a connectio
 fails, rerun the same command to resume. `skip_done: true` skips finished runs
 but still resumes an unfinished checkpoint.
 
-### `repeats` — do not report a single run
+### `repeats` - do not report a single run
 
 One run of one setup is **not a result**. With 3 honest agents, one agent
 changing its mind moves a score by 33 percentage points. Two runs of the very
@@ -433,9 +433,9 @@ average alone says very little.
 
 With `compare_baseline: true` you also get a verdict column:
 
-- **better, outside the noise** — no repeat of the worse setup did as well as
+- **better, outside the noise** - no repeat of the worse setup did as well as
   any repeat of the better one. This is a claim you can make.
-- **better, but inside the noise** — the two sets of repeats overlap, so the
+- **better, but inside the noise** - the two sets of repeats overlap, so the
   difference could be luck. Run more repeats before claiming anything.
 
 Inside one repeat, both halves of a comparison use that repeat's seed, so they
