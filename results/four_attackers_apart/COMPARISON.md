@@ -45,7 +45,7 @@ attack success by 3.97 points and diffusion reach by 1.94 points. However, the
 effects were not consistent across all paired repeats: in repeat 1 attack
 success was unchanged and diffusion reach increased. Attacker influence also
 remained above the equal-share baseline with defense on (1.071×), trust
-separation stayed negative, and AUPRC remained around 0.47—below the 4/7
+separation stayed negative, and AUPRC remained around 0.47, below the 4/7
 attacker-prevalence baseline of about 0.57. This indicates the trust signal did
 not reliably identify the attackers in this majority-attacker setup, despite
 the modest average improvement in answer outcomes. Treat the estimates as

@@ -5,17 +5,17 @@ named subfolder; keep the matching YAML configurations under `configs/`.
 
 ## Current studies
 
-- `attacker_count_comparison.md` — summary table comparing attack impact and
+- `attacker_count_comparison.md` - summary table comparing attack impact and
   defense effect for one through four attackers.
-- `single_attacker/` — one attacker, defense off/on comparison; see
+- `single_attacker/` - one attacker, defense off/on comparison; see
   `single_attacker/COMPARISON.md` for the completed three-repeat summary.
-- `three_attackers_apart/` — completed defense off/on comparison with attackers
+- `three_attackers_apart/` - completed defense off/on comparison with attackers
   at seats 0, 2, and 4; see `three_attackers_apart/COMPARISON.md`.
-- `four_attackers_apart/` — completed defense off/on comparison with four
+- `four_attackers_apart/` - completed defense off/on comparison with four
   attackers maximally spaced on the seven-agent ring; see
   `four_attackers_apart/COMPARISON.md`.
-- `fixed_pair/` — paired two-attacker ring runs.
-- `final_ring_gate/` — final gate pilot and candidate runs.
+- `fixed_pair/` - paired two-attacker ring runs.
+- `final_ring_gate/` - final gate pilot and candidate runs.
 - The generated ring-study batch is stored under `ring/` when produced by
   `tools/make_configs.py`.
 
