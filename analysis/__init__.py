@@ -1,1 +1,1 @@
-"""Offline analysis for stored Trust-on-Trial result files."""
+"""Offline analysis for stored Mistaken-Or-Malicious result files."""
