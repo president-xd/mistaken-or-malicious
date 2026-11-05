@@ -1,4 +1,4 @@
-# Trust-On-Trail: P2P Agent Network with Dynamic Trust
+# Mistaken-Or-Malicious
 
 > **Setting things up?** See **[SETTINGS.md](SETTINGS.md)** for every command
 > and every setting, with advice on what to choose.
